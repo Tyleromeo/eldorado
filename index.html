@@ -743,7 +743,18 @@ function showSection(name) {
   if (name === 'gear' && allActivities.length) { try { renderGear(); } catch(e) { console.error('renderGear:', e); } }
   if (name === 'segments' && allActivities.length) { try { renderSegments(); } catch(e) { console.error('renderSegments:', e); } }
   if (name === 'collaborators' && allActivities.length) { try { renderCollaborators(collabFilter||'all'); } catch(e) { console.error('renderCollaborators:', e); } }
-  if (name === 'performance' && allActivities.length) { setTimeout(function() { try { renderPerformance(); } catch(e) { console.error('renderPerformance:', e); } }, 50); }
+  if (name === 'performance' && allActivities.length) { 
+    setTimeout(function() { 
+      try { 
+        renderPRCards();
+        renderYOY();
+        renderCalendar();
+        renderPowerCurve(); 
+        renderAeroChart();
+        renderHeatmap();
+      } catch(e) { console.error('renderPerformance:', e); } 
+    }, 200); 
+  }
 }
 let weatherLoaded = false;
 
