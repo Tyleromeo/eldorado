@@ -668,6 +668,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <script>
 const CLIENT_ID = '257624';
 const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
+const APP_VERSION = 'v4.14';
+
+// Clear stale tokens on version change
+(function() {
+  if (localStorage.getItem('ed_version') !== APP_VERSION) {
+    var keys = ['ed_token','ed_refresh','ed_expires'];
+    keys.forEach(function(k) { localStorage.removeItem(k); });
+    localStorage.setItem('ed_version', APP_VERSION);
+  }
+})();
 // FTP and weight now come from settings - these are fallback defaults
 const FTP = 220;
 const WEIGHT_KG = 75;
