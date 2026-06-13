@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ElDorado</title>
@@ -1178,8 +1178,15 @@ function renderMilesByYear() {
     </div>`;
 
   const perfSection = document.getElementById('section-performance');
-  const firstCard = perfSection.querySelector('.card');
-  perfSection.insertBefore(card, firstCard.nextSibling.nextSibling);
+  if (!perfSection) return;
+  // Append at end of section safely
+  const prCardsEl = document.getElementById('pr-cards');
+  const prContainer = prCardsEl ? prCardsEl.parentNode : null;
+  if (prContainer && prContainer.nextSibling) {
+    perfSection.insertBefore(card, prContainer.nextSibling);
+  } else {
+    perfSection.appendChild(card);
+  }
 
   setTimeout(() => {
     if (charts['milesyr']) charts['milesyr'].destroy();
