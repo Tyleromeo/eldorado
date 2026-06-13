@@ -682,7 +682,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <script>
 const CLIENT_ID = '257624';
 const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
-const APP_VERSION = 'v4.14';
+const APP_VERSION = 'v4.15';
 
 // Clear stale tokens on version change
 (function() {
@@ -777,7 +777,7 @@ function showSection(name) {
         renderAeroChart();
         renderHeatmap();
       } catch(e) { console.error('renderPerformance:', e); } 
-    }, 200); 
+    }, 500); 
   }
 }
 let weatherLoaded = false;
@@ -1291,14 +1291,13 @@ function renderPowerCurveFor(period) {
       const relevant = rides.filter(a => a.moving_time >= dur);
       if (!relevant.length) return 0;
       if (dur <= 30) {
-        // Use max_watts if available, otherwise conservative estimate
-        const maxW = Math.max(...relevant.map(a => a.max_watts || 0));
-        if (maxW > 0) return maxW;
-        // Without max_watts, we cannot reliably estimate sprint power - return 0
+        // Use max_watts if available, cap at realistic max (800w for strong amateur)
+        const maxW = Math.max(...relevant.map(a => Math.min(a.max_watts || 0, 800)));
+        if (maxW > 50) return maxW;
         return 0;
       } else if (dur <= 60) {
-        const maxW = Math.max(...relevant.map(a => a.max_watts || 0));
-        if (maxW > 0) return Math.round(maxW * 0.85);
+        const maxW = Math.max(...relevant.map(a => Math.min(a.max_watts || 0, 800)));
+        if (maxW > 50) return Math.round(maxW * 0.85);
         return Math.round(Math.max(...relevant.map(a=>a.average_watts)) * 1.15);
       } else if (dur <= 300) {
         // 5 min: best average_watts from rides longer than 5 min * modest factor
