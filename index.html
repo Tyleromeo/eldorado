@@ -685,7 +685,7 @@ const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
 const SUPABASE_URL = 'https://chvrtqrjnatjftqzvgbv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNodnJ0cXJqbmF0amZ0cXp2Z2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MzM5NTgsImV4cCI6MjA5NzEwOTk1OH0.LtpcWIUO0hGSfoggIkcz7vuXm_0_F7_1uSHhMsUgtDU';
 const EDGE_FN = SUPABASE_URL + '/functions/v1/sync-strava';
-const APP_VERSION = 'v4.22';
+const APP_VERSION = 'v4.23';
 
 // Clear stale tokens on version change
 (function() {
@@ -701,45 +701,67 @@ const WEIGHT_KG = 75;
 
 
 // ==================== SUPABASE SYNC ====================
+const SB_REST = SUPABASE_URL + '/rest/v1';
+const SB_HEADERS = {
+  'Content-Type': 'application/json',
+  'apikey': SUPABASE_ANON_KEY,
+  'Prefer': 'resolution=merge-duplicates'
+};
+
 async function syncToSupabase(athlete_id, access_token) {
   try {
-    // Sync activities in background
-    await fetch(EDGE_FN, {
+    // Upsert athlete record
+    await fetch(SB_REST + '/athletes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
-      body: JSON.stringify({ action: 'sync', athlete_id, access_token })
+      headers: SB_HEADERS,
+      body: JSON.stringify({
+        id: athlete_id, strava_id: athlete_id,
+        firstname: athleteData ? athleteData.firstname : '',
+        lastname: athleteData ? athleteData.lastname : '',
+        updated_at: new Date().toISOString()
+      })
     });
 
-    // Sync power PRs in background (takes longer)
-    setTimeout(async function() {
-      try {
-        await fetch(EDGE_FN, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
-          body: JSON.stringify({ action: 'sync_power', athlete_id, access_token })
-        });
-        // Refresh power curve after sync
-        if (typeof renderPowerCurve === 'function') {
-          loadPowerPRsFromSupabase(athlete_id);
-        }
-      } catch(e) { console.log('Power sync error:', e); }
-    }, 5000);
+    // Sync activities in batches of 50
+    var rows = allActivities.map(function(a) {
+      return {
+        id: a.id, athlete_id: athlete_id, name: a.name, type: a.type,
+        distance: a.distance, moving_time: a.moving_time,
+        total_elevation_gain: a.total_elevation_gain,
+        average_watts: a.average_watts || null,
+        max_watts: a.max_watts || null,
+        average_heartrate: a.average_heartrate || null,
+        average_speed: a.average_speed || null,
+        suffer_score: a.suffer_score || null,
+        achievement_count: a.achievement_count || 0,
+        gear_id: a.gear_id || null,
+        start_date: a.start_date
+      };
+    });
+
+    for (var i = 0; i < rows.length; i += 50) {
+      var batch = rows.slice(i, i + 50);
+      await fetch(SB_REST + '/activities', {
+        method: 'POST', headers: SB_HEADERS, body: JSON.stringify(batch)
+      });
+    }
+    console.log('Supabase sync complete: ' + rows.length + ' activities');
+
+    // Load power PRs from Supabase
+    await loadPowerPRsFromSupabase(athlete_id);
 
   } catch(e) { console.log('Sync error:', e); }
 }
 
 async function loadPowerPRsFromSupabase(athlete_id) {
   try {
-    const r = await fetch(EDGE_FN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
-      body: JSON.stringify({ action: 'get_power_prs', athlete_id })
+    const r = await fetch(SB_REST + '/power_prs?athlete_id=eq.' + athlete_id + '&order=duration_seconds', {
+      headers: { 'apikey': SUPABASE_ANON_KEY }
     });
-    const data = await r.json();
-    if (data.power_prs && data.power_prs.length) {
-      // Group by year
-      const byYear = {};
-      data.power_prs.forEach(function(pr) {
+    const prs = await r.json();
+    if (Array.isArray(prs) && prs.length) {
+      var byYear = {};
+      prs.forEach(function(pr) {
         if (!byYear[pr.year]) byYear[pr.year] = {};
         byYear[pr.year][pr.duration_seconds] = {
           watts: pr.watts,
@@ -748,7 +770,7 @@ async function loadPowerPRsFromSupabase(athlete_id) {
         };
       });
       window.powerPRsByYear = byYear;
-      console.log('Power PRs loaded from Supabase:', Object.keys(byYear));
+      console.log('Power PRs loaded:', Object.keys(byYear).join(', '));
     }
   } catch(e) { console.log('Load power PRs error:', e); }
 }
