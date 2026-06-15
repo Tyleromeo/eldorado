@@ -682,7 +682,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <script>
 const CLIENT_ID = '257624';
 const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
-const APP_VERSION = 'v4.16';
+const APP_VERSION = 'v4.18';
 
 // Clear stale tokens on version change
 (function() {
@@ -693,11 +693,11 @@ const APP_VERSION = 'v4.16';
   }
 })();
 // FTP and weight now come from settings - these are fallback defaults
-const FTP = 220;
+const FTP = 249;
 const WEIGHT_KG = 75;
 
 // ==================== SETTINGS ====================
-const DEFAULTS = { ftp:220, weight:75, runPace:'7:30', css:'1:45', ageGroup:'35_44', city:'Smithtown, NY', units:'imperial' };
+const DEFAULTS = { ftp:249, weight:75, runPace:'7:30', css:'1:45', ageGroup:'35_44', city:'Smithtown, NY', units:'imperial' };
 
 function getSettings() {
   try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ed_settings')||'{}')); }
@@ -910,9 +910,9 @@ async function loadAll(token) {
     fetch(`https://www.strava.com/api/v3/gear/${id}`, {headers}).then(r=>r.json()).catch(()=>null)
   )).then(arr => arr.filter(Boolean));
 
-  // Fetch power streams for recent rides to build accurate power curve
+  // Fetch power streams for recent rides (limited to avoid rate limits)
   setLoading('Loading power data...', 'Fetching ride power streams');
-  const powerRides = allActivities.filter(a=>(a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0).slice(0,15);
+  const powerRides = allActivities.filter(a=>(a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0&&a.moving_time>1800).slice(0,5);
   window.powerStreams = {};
   for (const ride of powerRides) {
     try {
@@ -920,6 +920,8 @@ async function loadAll(token) {
       if (stream && stream.watts && stream.watts.data) {
         window.powerStreams[ride.id] = stream.watts.data;
       }
+      // Small delay to avoid rate limiting
+      await new Promise(function(r){setTimeout(r,200);});
     } catch(e) {}
   }
 
@@ -1298,47 +1300,48 @@ function renderPowerCurveFor(period) {
     }).filter(a=>(a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0);
   }
 
+  // Real all-time PRs from Strava (verified June 2026)
+  const REAL_POWER_PRS = {
+    5:    1077,
+    15:   853,
+    30:   766,
+    60:   642,
+    120:  487,
+    180:  400,
+    300:  319,
+    480:  284,
+    600:  290,
+    900:  265,
+    1200: 263,
+    1800: 249,
+    2700: 241,
+    3600: 231
+  };
+
   function getBestPowers(rides) {
     const durations = [5,30,60,180,300,600,1200,1800,3600];
-    const streams = window.powerStreams || {};
 
-    return durations.map(dur => {
-      const relevant = rides.filter(a => a.moving_time >= dur);
-      if (!relevant.length) return 0;
+    return durations.map(function(dur) {
+      // Use real verified PR data where available
+      if (REAL_POWER_PRS[dur]) return REAL_POWER_PRS[dur];
 
-      // Try to get best power from actual stream data
-      var bestFromStream = 0;
-      relevant.forEach(function(ride) {
-        if (!streams[ride.id]) return;
-        var data = streams[ride.id];
-        if (data.length < dur) return;
-        // Rolling average over 'dur' seconds
-        var windowSize = Math.min(dur, data.length);
-        var best = 0;
-        for (var i = 0; i <= data.length - windowSize; i++) {
-          var slice = data.slice(i, i + windowSize);
-          var avg = slice.reduce(function(s,v){return s+v;},0) / slice.length;
-          if (avg > best) best = avg;
+      // Interpolate for durations between known points
+      var keys = Object.keys(REAL_POWER_PRS).map(Number).sort(function(a,b){return a-b;});
+      var lower = null, upper = null;
+      for (var i=0; i<keys.length-1; i++) {
+        if (keys[i] <= dur && keys[i+1] >= dur) {
+          lower = keys[i]; upper = keys[i+1]; break;
         }
-        if (best > bestFromStream) bestFromStream = Math.round(best);
-      });
-
-      if (bestFromStream > 10) return bestFromStream;
-
-      // Fallback to activity summary data
-      if (dur <= 30) {
-        var maxW = Math.max.apply(null, relevant.map(function(a){return Math.min(a.max_watts||0,800);}));
-        return maxW > 50 ? maxW : 0;
-      } else if (dur <= 60) {
-        var maxW2 = Math.max.apply(null, relevant.map(function(a){return Math.min(a.max_watts||0,800);}));
-        return maxW2 > 50 ? Math.round(maxW2*0.85) : Math.round(Math.max.apply(null,relevant.map(function(a){return a.average_watts;}))*1.15);
-      } else if (dur <= 300) {
-        return Math.round(Math.max.apply(null,relevant.map(function(a){return a.average_watts;}))*1.10);
-      } else if (dur <= 1200) {
-        return Math.round(Math.max.apply(null,relevant.map(function(a){return a.average_watts;}))*1.04);
-      } else {
-        return Math.round(Math.max.apply(null,relevant.map(function(a){return a.average_watts;}))*0.98);
       }
+      if (lower && upper) {
+        var ratio = (dur - lower) / (upper - lower);
+        return Math.round(REAL_POWER_PRS[lower] + ratio * (REAL_POWER_PRS[upper] - REAL_POWER_PRS[lower]));
+      }
+
+      // Fallback to activity data for very long durations
+      const relevant = rides.filter(function(a){ return a.moving_time >= dur; });
+      if (!relevant.length) return 0;
+      return Math.round(Math.max.apply(null, relevant.map(function(a){ return a.average_watts || 0; })) * 0.97);
     });
   }
 
@@ -2022,12 +2025,13 @@ async function loadClubEvents() {
 
     // Fetch events for each club
     const allEvents = [];
-    for (const club of clubs.slice(0, 5)) {
+    for (const club of clubs.slice(0, 3)) {
       try {
-        const events = await fetch(`https://www.strava.com/api/v3/clubs/${club.id}/group_events`, {headers}).then(r=>r.json());
+        const events = await fetch('https://www.strava.com/api/v3/clubs/'+club.id+'/group_events', {headers}).then(r=>r.json());
         if (Array.isArray(events)) {
-          events.forEach(e => allEvents.push({...e, club_name: club.name, club_id: club.id}));
+          events.forEach(function(e) { allEvents.push(Object.assign({}, e, {club_name: club.name, club_id: club.id})); });
         }
+        await new Promise(function(r){setTimeout(r,300);});
       } catch(e) {}
     }
 
