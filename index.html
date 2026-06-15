@@ -685,7 +685,7 @@ const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
 const SUPABASE_URL = 'https://chvrtqrjnatjftqzvgbv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNodnJ0cXJqbmF0amZ0cXp2Z2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MzM5NTgsImV4cCI6MjA5NzEwOTk1OH0.LtpcWIUO0hGSfoggIkcz7vuXm_0_F7_1uSHhMsUgtDU';
 const EDGE_FN = SUPABASE_URL + '/functions/v1/sync-strava';
-const APP_VERSION = 'v4.21';
+const APP_VERSION = 'v4.22';
 
 // Clear stale tokens on version change
 (function() {
@@ -860,35 +860,41 @@ async function handleCallback() {
   if (!code) return false;
 
   window.history.replaceState({}, '', window.location.pathname);
-  setLoading('Connecting to Strava...', 'Authenticating via ElDorado backend');
+  setLoading('Connecting to Strava...');
 
   try {
-    // Exchange code via Supabase edge function
-    const r = await fetch(EDGE_FN, {
+    // Direct Strava token exchange (fast, reliable)
+    const r = await fetch('https://www.strava.com/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
-      body: JSON.stringify({ action: 'auth', code: code })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        code: code,
+        grant_type: 'authorization_code'
+      })
     });
 
     let data;
     try { data = await r.json(); } catch(e) { data = {}; }
 
     if (!data || !data.access_token) {
-      const msg = data ? (data.error || data.detail || JSON.stringify(data).slice(0, 200)) : 'No response from server';
+      const msg = data ? (data.message || data.error || JSON.stringify(data).slice(0,200)) : 'Auth failed';
       showError('Connection failed: ' + msg);
       return true;
     }
 
-    // Store token + athlete_id locally
     localStorage.setItem('ed_token', data.access_token);
     localStorage.setItem('ed_refresh', data.refresh_token);
     localStorage.setItem('ed_expires', data.expires_at);
-    localStorage.setItem('ed_athlete_id', data.athlete_id);
+    if (data.athlete) localStorage.setItem('ed_athlete_id', data.athlete.id);
 
-    setLoading('Syncing your data...', 'Loading activities from Supabase');
-
-    // Trigger background sync
-    syncToSupabase(data.athlete_id, data.access_token);
+    // Trigger background Supabase sync after successful auth
+    if (data.athlete) {
+      setTimeout(function() {
+        syncToSupabase(data.athlete.id, data.access_token);
+      }, 3000);
+    }
 
     await loadAll(data.access_token);
     return true;
@@ -908,21 +914,20 @@ function storeToken(data) {
 async function getToken() {
   const exp = parseInt(localStorage.getItem('ed_expires')||'0');
   if (localStorage.getItem('ed_token') && Date.now()/1000 < exp-60) return localStorage.getItem('ed_token');
-  
-  const athlete_id = localStorage.getItem('ed_athlete_id');
-  if (!athlete_id) return null;
-
+  const refresh = localStorage.getItem('ed_refresh');
+  if (!refresh) return null;
   try {
-    const r = await fetch(EDGE_FN, {
+    const r = await fetch('https://www.strava.com/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
-      body: JSON.stringify({ action: 'refresh', athlete_id: parseInt(athlete_id) })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, refresh_token: refresh, grant_type: 'refresh_token' })
     });
     let data;
     try { data = await r.json(); } catch(e) { data = {}; }
     if (data && data.access_token) {
       localStorage.setItem('ed_token', data.access_token);
-      if (data.expires_at) localStorage.setItem('ed_expires', data.expires_at);
+      localStorage.setItem('ed_refresh', data.refresh_token);
+      localStorage.setItem('ed_expires', data.expires_at);
       return data.access_token;
     }
   } catch(e) {}
