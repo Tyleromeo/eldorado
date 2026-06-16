@@ -1171,15 +1171,22 @@ function calcWeeklyStreak() {
     var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
     activeWeeks[getWeekStart(d)] = true;
   });
-  var streak = 0;
+  var sorted = Object.keys(activeWeeks).sort();
+  console.log('=== WEEKLY STREAK DEBUG ===');
+  console.log('Active weeks:', sorted.slice(-10));
   var weekStart = new Date(getWeekStart(now));
   weekStart.setDate(weekStart.getDate() - 7);
+  var y = weekStart.getFullYear(), m = String(weekStart.getMonth()+1).padStart(2,'0'), dd = String(weekStart.getDate()).padStart(2,'0');
+  console.log('Starting check from week:', y+'-'+m+'-'+dd);
+  var streak = 0;
   while (true) {
-    var y = weekStart.getFullYear(), m = String(weekStart.getMonth()+1).padStart(2,'0'), dd = String(weekStart.getDate()).padStart(2,'0');
-    var ws = y + '-' + m + '-' + dd;
+    var y2 = weekStart.getFullYear(), m2 = String(weekStart.getMonth()+1).padStart(2,'0'), dd2 = String(weekStart.getDate()).padStart(2,'0');
+    var ws = y2 + '-' + m2 + '-' + dd2;
+    console.log('Checking week:', ws, '-> found:', !!activeWeeks[ws]);
     if (activeWeeks[ws]) { streak++; weekStart.setDate(weekStart.getDate()-7); }
     else break;
   }
+  console.log('Final weekly streak:', streak);
   return streak;
 }
 
