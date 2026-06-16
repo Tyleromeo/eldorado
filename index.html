@@ -348,7 +348,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="chart-wrap chart-wrap-md" style="height:180px;position:relative;margin-top:1rem"><canvas id="power-chart"></canvas></div>
     </div>
     <div class="card" style="margin-bottom:0">
-      <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>Aerobic efficiency (HR:Power)</div></div>
+      <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>Aerobic efficiency (HR:Power)</div><span id="aero-range-label" style="font-size:11px;color:#7d8590"></span></div>
       <div id="aero-filters" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
         <button class="nav-btn active" onclick="renderAeroFor(7)">7d</button>
         <button class="nav-btn" onclick="renderAeroFor(30)">1mo</button>
@@ -685,7 +685,7 @@ const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
 const SUPABASE_URL = 'https://chvrtqrjnatjftqzvgbv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNodnJ0cXJqbmF0amZ0cXp2Z2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MzM5NTgsImV4cCI6MjA5NzEwOTk1OH0.LtpcWIUO0hGSfoggIkcz7vuXm_0_F7_1uSHhMsUgtDU';
 const EDGE_FN = SUPABASE_URL + '/functions/v1/sync-strava';
-const APP_VERSION = 'v4.26';
+const APP_VERSION = 'v4.28';
 
 // Clear stale tokens on version change
 (function() {
@@ -1593,13 +1593,18 @@ function renderAeroFor(range) {
   else { cutoff = new Date(now); cutoff.setDate(cutoff.getDate()-range); }
 
   const rides = allActivities
-    .filter(a=>(a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0&&a.average_heartrate>0&&new Date(a.start_date)>=cutoff)
-    .sort((a,b)=>new Date(a.start_date)-new Date(b.start_date));
+    .filter(function(a){ return (a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0&&a.average_heartrate>0&&new Date(a.start_date)>=cutoff; })
+    .sort(function(a,b){ return new Date(a.start_date)-new Date(b.start_date); });
 
   const insightEl = document.getElementById('aero-insight');
 
-  if (rides.length < 3) {
-    insightEl.textContent = 'Not enough power+HR rides in this period. Try a longer range.';
+  // Show date range info
+  const rangeLabel = range==='ytd' ? 'YTD' : range+' days';
+  const actualStart = rides.length ? new Date(rides[0].start_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+  const actualEnd = rides.length ? new Date(rides[rides.length-1].start_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+
+  if (rides.length < 2) {
+    if (insightEl) insightEl.textContent = 'Not enough power+HR rides in this period ('+rangeLabel+' requested, '+rides.length+' found). Try a longer range or check that your rides have HR data.';
     if (charts['aero']) charts['aero'].destroy();
     return;
   }
@@ -1614,6 +1619,10 @@ function renderAeroFor(range) {
   const slope = efficiency.reduce((s,v,i)=>s+(i-xMean)*(v-yMean),0) / efficiency.reduce((s,_,i)=>s+(i-xMean)**2,0);
   const intercept = yMean - slope*xMean;
   const trendData = efficiency.map((_,i)=>parseFloat((slope*i+intercept).toFixed(2)));
+
+  // Update range label
+  var rangeEl = document.getElementById('aero-range-label');
+  if (rangeEl && actualStart && actualEnd) rangeEl.textContent = actualStart + ' - ' + actualEnd + ' (' + rides.length + ' rides)';
 
   if (charts['aero']) charts['aero'].destroy();
   const ctx = document.getElementById('aero-chart').getContext('2d');
@@ -1634,12 +1643,14 @@ function renderAeroFor(range) {
   const trend = slope * (n-1);
   const avgEff = yMean.toFixed(2);
   const bestRide = rides.reduce((best,r)=>r.average_watts/r.average_heartrate > best.average_watts/best.average_heartrate ? r : best);
-  const insight = trend > 0.05
-    ? `Efficiency trending up (+${trend.toFixed(2)} W/bpm). Avg ${avgEff} W/bpm over ${rides.length} rides. Your base fitness is building well.`
+  var rideCount = rides.length + ' rides';
+  var dateRange = actualStart && actualEnd && actualStart !== actualEnd ? ' (' + actualStart + ' - ' + actualEnd + ')' : '';
+  var insight = trend > 0.05
+    ? 'Efficiency trending up (+' + trend.toFixed(2) + ' W/bpm). Avg ' + avgEff + ' W/bpm over ' + rideCount + dateRange + '. Base fitness building well.'
     : trend < -0.05
-    ? `Efficiency dipping (${trend.toFixed(2)} W/bpm) -- normal during heavy blocks. Avg ${avgEff} W/bpm. Should recover with easier days.`
-    : `Efficiency stable at ${avgEff} W/bpm over ${rides.length} rides. Best: ${bestRide.name} (${(bestRide.average_watts/bestRide.average_heartrate).toFixed(2)} W/bpm).`;
-  insightEl.textContent = insight;
+    ? 'Efficiency dipping (' + trend.toFixed(2) + ' W/bpm) -- normal during heavy blocks. Avg ' + avgEff + ' W/bpm over ' + rideCount + dateRange + '. Should recover with easier days.'
+    : 'Efficiency stable at ' + avgEff + ' W/bpm over ' + rideCount + dateRange + '. Best: ' + bestRide.name + ' (' + (bestRide.average_watts/bestRide.average_heartrate).toFixed(2) + ' W/bpm).';
+  if (insightEl) insightEl.textContent = insight;
 }
 
 function renderYOY() {
@@ -1673,6 +1684,37 @@ function renderYOY() {
   }).join('');
 }
 
+
+function activityTypeLabel(type) {
+  var map = {
+    'Ride': 'Ride', 'VirtualRide': 'Virtual Ride', 'EBikeRide': 'E-Bike Ride',
+    'Run': 'Run', 'TrailRun': 'Trail Run', 'VirtualRun': 'Virtual Run',
+    'Walk': 'Walk', 'Hike': 'Hike',
+    'Swim': 'Swim', 'OpenWaterSwim': 'Open Water Swim',
+    'AlpineSki': 'Alpine Ski', 'BackcountrySki': 'Backcountry Ski', 'NordicSki': 'Nordic Ski',
+    'Snowboard': 'Snowboard', 'Snowshoe': 'Snowshoe',
+    'WeightTraining': 'Weight Training', 'Workout': 'Workout', 'Yoga': 'Yoga',
+    'Crossfit': 'CrossFit', 'Elliptical': 'Elliptical', 'StairStepper': 'Stair Stepper',
+    'Kayaking': 'Kayaking', 'Rowing': 'Rowing', 'Canoeing': 'Canoeing',
+    'Soccer': 'Soccer', 'Tennis': 'Tennis', 'Basketball': 'Basketball',
+    'Golf': 'Golf', 'RockClimbing': 'Rock Climbing',
+    'MountainBikeRide': 'MTB Ride', 'GravelRide': 'Gravel Ride',
+    'Skateboard': 'Skateboard', 'InlineSkate': 'Inline Skate',
+    'Surfing': 'Surfing', 'Windsurf': 'Windsurf',
+    'IceSkate': 'Ice Skate', 'Crosscountryski': 'XC Ski',
+  };
+  return map[type] || type;
+}
+
+function activityTypeColor(type) {
+  if (type==='Ride'||type==='VirtualRide'||type==='EBikeRide'||type==='MountainBikeRide'||type==='GravelRide') return '#FC4C02';
+  if (type==='Run'||type==='TrailRun'||type==='VirtualRun') return '#58a6ff';
+  if (type==='Walk'||type==='Hike') return '#3fb950';
+  if (type==='Swim'||type==='OpenWaterSwim') return '#39d0f5';
+  if (type==='AlpineSki'||type==='BackcountrySki'||type==='NordicSki'||type==='Snowboard'||type==='Snowshoe') return '#c0e0ff';
+  if (type==='WeightTraining'||type==='Workout'||type==='Crossfit') return '#f0883e';
+  return '#bc8cff';
+}
 // ==================== TRAINING CALENDAR ====================
 let calYear, calMonth;
 
@@ -1740,14 +1782,20 @@ function renderCalendar() {
     if (acts.length) {
       const tss = acts.reduce((s,a)=>s+estimateTSS(a),0);
       const intensity = tss > 100 ? 1 : tss > 60 ? 0.75 : 0.5;
-      if (rides.length) bg = `rgba(252,76,2,${intensity*0.4})`;
-      else if (runs.length) bg = `rgba(88,166,255,${intensity*0.4})`;
-      else bg = `rgba(188,140,255,${intensity*0.4})`;
+      var primaryType = acts[0] ? acts[0].type : 'Other';
+      var primaryColor = activityTypeColor(primaryType);
+      var rgb = primaryColor==='#FC4C02'?'252,76,2':primaryColor==='#58a6ff'?'88,166,255':primaryColor==='#3fb950'?'63,185,80':primaryColor==='#39d0f5'?'57,208,245':primaryColor==='#f0883e'?'240,136,62':'188,140,255';
+      bg = 'rgba('+rgb+','+intensity*0.4+')';
 
       const dotArr = [];
-      if (rides.length) dotArr.push(`<span style="width:5px;height:5px;border-radius:50%;background:#FC4C02;display:inline-block"></span>`);
-      if (runs.length) dotArr.push(`<span style="width:5px;height:5px;border-radius:50%;background:#58a6ff;display:inline-block"></span>`);
-      if (other.length) dotArr.push(`<span style="width:5px;height:5px;border-radius:50%;background:#bc8cff;display:inline-block"></span>`);
+      var seenColors = [];
+      acts.forEach(function(a) {
+        var col = activityTypeColor(a.type);
+        if (seenColors.indexOf(col) === -1) {
+          seenColors.push(col);
+          dotArr.push('<span style="width:5px;height:5px;border-radius:50%;background:'+col+';display:inline-block"></span>');
+        }
+      });
       dots = `<div style="display:flex;gap:2px;justify-content:center;margin-top:2px">${dotArr.join('')}</div>`;
     }
 
@@ -1783,11 +1831,14 @@ function showCalDay(dateStr) {
   if (!acts.length) return;
   const d = new Date(dateStr);
   const dateLabel = d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  alert(dateLabel + '\n\n' + acts.map(a=>{
-    const mi = (a.distance/1609.34).toFixed(1);
-    const h=Math.floor(a.moving_time/3600), m=Math.floor((a.moving_time%3600)/60);
-    const t = h>0?`${h}h ${m}m`:`${m}m`;
-    return `• ${a.name}: ${mi}mi in ${t}${a.average_watts?' @ '+Math.round(a.average_watts)+'w':''}`;
+  alert(dateLabel + '\n\n' + acts.map(function(a){
+    var mi = (a.distance/1609.34).toFixed(1);
+    var h=Math.floor(a.moving_time/3600), m=Math.floor((a.moving_time%3600)/60);
+    var t = h>0?(h+'h '+m+'m'):(m+'m');
+    var typeLabel = activityTypeLabel(a.type);
+    var power = a.average_watts ? ' @ '+Math.round(a.average_watts)+'w' : '';
+    var hr = a.average_heartrate ? ' | '+Math.round(a.average_heartrate)+'bpm' : '';
+    return '• ['+typeLabel+'] '+a.name+': '+mi+'mi in '+t+power+hr;
   }).join('\n'));
 }
 
