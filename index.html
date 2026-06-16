@@ -995,6 +995,8 @@ async function loadAll(token) {
     allActivities = [...allActivities, ...batch];
     if (batch.length < 50) break;
   }
+  allActivities.sort((a,b) => new Date(b.start_date) - new Date(a.start_date));
+  console.log('Total activities loaded:', allActivities.length, 'Most recent:', allActivities[0]?.start_date);
 
   // Stats
   setLoading('Loading all-time stats...');
