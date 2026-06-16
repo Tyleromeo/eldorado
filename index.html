@@ -1117,80 +1117,39 @@ function checkNotifications(activities, metrics) {
 function getActiveDays() {
   var activeDays = {};
   allActivities.forEach(function(a) { activeDays[a.start_date.split('T')[0]] = true; });
-  var sorted = Object.keys(activeDays).sort();
-  console.log('getActiveDays: total days=', sorted.length, 'most recent 5=', sorted.slice(-5));
   return activeDays;
 }
 
 
-function getWeekStart(date) {
-  var d = new Date(date);
-  var day = d.getDay(); // 0=Sun, 1=Mon
-  var diff = (day === 0) ? 6 : day - 1; // days since Monday
-  d.setDate(d.getDate() - diff);
-  var y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
-  return y + '-' + m + '-' + dd;
-}
-
-function calcDailyStreak() {
-  var now = new Date();
-  var todayStr = now.toISOString().split('T')[0];
-  var activeDays = getActiveDays();
-  var streak = 0;
-  var d = new Date(now);
-  if (!activeDays[todayStr]) d.setDate(d.getDate()-1);
-  while (true) {
-    var ds = d.toISOString().split('T')[0];
-    if (activeDays[ds]) { streak++; d.setDate(d.getDate()-1); }
-    else break;
-  }
-  return streak;
-}
-
-function calcAllTimeDailyStreak() {
-  var activeDays = getActiveDays();
-  var sorted = Object.keys(activeDays).sort();
-  if (!sorted.length) return 0;
-  var best = 1, current = 1;
-  for (var i = 1; i < sorted.length; i++) {
-    var prev = new Date(sorted[i-1]);
-    var curr = new Date(sorted[i]);
-    var diff = (curr - prev) / (1000*60*60*24);
-    if (diff === 1) {
-      current++;
-      if (current > best) best = current;
-    } else {
-      current = 1;
-    }
-  }
-  return best;
+function getWeekStart(dateStr) {
+  // Parse as UTC to match getActiveDays keys (which are UTC date strings from Strava)
+  var p = dateStr.split('-');
+  var d = new Date(Date.UTC(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])));
+  var day = d.getUTCDay(); // 0=Sun, 1=Mon
+  var diff = (day === 0) ? 6 : day - 1;
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d.toISOString().split('T')[0];
 }
 
 function calcWeeklyStreak() {
   var now = new Date();
+  var todayUTC = now.toISOString().split('T')[0];
   var activeDays = getActiveDays();
   var activeWeeks = {};
   Object.keys(activeDays).forEach(function(ds) {
-    var p = ds.split('-');
-    var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-    activeWeeks[getWeekStart(d)] = true;
+    activeWeeks[getWeekStart(ds)] = true;
   });
-  var sorted = Object.keys(activeWeeks).sort();
-  console.log('=== WEEKLY STREAK DEBUG ===');
-  console.log('Active weeks:', sorted.slice(-10));
-  var weekStart = new Date(getWeekStart(now));
-  weekStart.setDate(weekStart.getDate() - 7);
-  var y = weekStart.getFullYear(), m = String(weekStart.getMonth()+1).padStart(2,'0'), dd = String(weekStart.getDate()).padStart(2,'0');
-  console.log('Starting check from week:', y+'-'+m+'-'+dd);
   var streak = 0;
+  // Get start of current UTC week (Monday), then go back one week to last completed week
+  var currentWeekStart = getWeekStart(todayUTC);
+  var p = currentWeekStart.split('-');
+  var weekDate = new Date(Date.UTC(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])));
+  weekDate.setUTCDate(weekDate.getUTCDate() - 7);
   while (true) {
-    var y2 = weekStart.getFullYear(), m2 = String(weekStart.getMonth()+1).padStart(2,'0'), dd2 = String(weekStart.getDate()).padStart(2,'0');
-    var ws = y2 + '-' + m2 + '-' + dd2;
-    console.log('Checking week:', ws, '-> found:', !!activeWeeks[ws]);
-    if (activeWeeks[ws]) { streak++; weekStart.setDate(weekStart.getDate()-7); }
+    var ws = weekDate.toISOString().split('T')[0];
+    if (activeWeeks[ws]) { streak++; weekDate.setUTCDate(weekDate.getUTCDate()-7); }
     else break;
   }
-  console.log('Final weekly streak:', streak);
   return streak;
 }
 
@@ -1198,17 +1157,14 @@ function calcAllTimeWeeklyStreak() {
   var activeDays = getActiveDays();
   var activeWeeks = {};
   Object.keys(activeDays).forEach(function(ds) {
-    var p = ds.split('-');
-    var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-    activeWeeks[getWeekStart(d)] = true;
+    activeWeeks[getWeekStart(ds)] = true;
   });
   var sorted = Object.keys(activeWeeks).sort();
   if (!sorted.length) return 0;
   var best = 1, current = 1;
   for (var i = 1; i < sorted.length; i++) {
-    var p = sorted[i-1].split('-'), c = sorted[i].split('-');
-    var prev = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-    var curr = new Date(parseInt(c[0]), parseInt(c[1])-1, parseInt(c[2]));
+    var prev = new Date(sorted[i-1]);
+    var curr = new Date(sorted[i]);
     var diff = Math.round((curr - prev) / (1000*60*60*24*7));
     if (diff === 1) { current++; if (current > best) best = current; }
     else { current = 1; }
