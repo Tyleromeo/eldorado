@@ -1119,7 +1119,9 @@ function getActiveDays() {
 
 function getWeekStart(date) {
   var d = new Date(date);
-  d.setDate(d.getDate() - d.getDay());
+  var day = d.getDay(); // 0=Sun, 1=Mon...
+  var diff = (day === 0) ? 6 : day - 1; // days since Monday
+  d.setDate(d.getDate() - diff);
   return d.toISOString().split('T')[0];
 }
 
@@ -1163,11 +1165,12 @@ function calcWeeklyStreak() {
   var activeWeeks = {};
   Object.keys(activeDays).forEach(function(ds) { activeWeeks[getWeekStart(new Date(ds))] = true; });
   var streak = 0;
+  // Always start from the most recently COMPLETED week (ignore current in-progress week)
   var weekStart = new Date(getWeekStart(now));
-  if (!activeWeeks[weekStart.toISOString().split('T')[0]]) weekStart.setDate(weekStart.getDate()-7);
+  weekStart.setDate(weekStart.getDate() - 7);
   while (true) {
     var ws = weekStart.toISOString().split('T')[0];
-    if (activeWeeks[ws]) { streak++; weekStart.setDate(weekStart.getDate()-7); }
+    if (activeWeeks[ws]) { streak++; weekStart.setDate(weekStart.getDate() - 7); }
     else break;
   }
   return streak;
