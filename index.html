@@ -342,7 +342,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <button class="nav-btn active" onclick="renderPowerCurveFor('all')">All time</button>
         <button class="nav-btn" onclick="renderPowerCurveFor('lastyear')">Last year</button>
         <button class="nav-btn" onclick="renderPowerCurveFor('thisyear')">This year</button>
-        <button class="nav-btn" onclick="renderPowerCurveFor('compare')">This month vs last year</button>
+        <button class="nav-btn" onclick="renderPowerCurveFor('compare')">2025 vs 2026</button>
       </div>
       <div id="power-curve-bars"></div>
       <div class="chart-wrap chart-wrap-md" style="height:180px;position:relative;margin-top:1rem"><canvas id="power-chart"></canvas></div>
@@ -685,7 +685,7 @@ const CLIENT_SECRET = 'a649b9610e77abb13c8384c4c6a51e78a4c3354b';
 const SUPABASE_URL = 'https://chvrtqrjnatjftqzvgbv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNodnJ0cXJqbmF0amZ0cXp2Z2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MzM5NTgsImV4cCI6MjA5NzEwOTk1OH0.LtpcWIUO0hGSfoggIkcz7vuXm_0_F7_1uSHhMsUgtDU';
 const EDGE_FN = SUPABASE_URL + '/functions/v1/sync-strava';
-const APP_VERSION = 'v4.25';
+const APP_VERSION = 'v4.26';
 
 // Clear stale tokens on version change
 (function() {
@@ -1444,20 +1444,48 @@ function renderPowerCurveFor(period) {
   const barsEl = document.getElementById('power-curve-bars');
 
   if (period === 'compare') {
-    // Use Supabase power PRs for year comparison if available
-    const prs = window.powerPRsByYear || {};
-    const yr2025 = prs[2025] || {};
-    const yr2026 = prs[2026] || {};
-    const has2025 = Object.keys(yr2025).length > 0;
-    const has2026 = Object.keys(yr2026).length > 0;
+    // Calculate 2025 vs 2026 from activity data
+    const now = new Date();
+    const thisYear = now.getFullYear();
+    const rides2026 = allActivities.filter(function(a){ return (a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0&&new Date(a.start_date).getFullYear()===thisYear; });
+    const rides2025 = allActivities.filter(function(a){ return (a.type==='Ride'||a.type==='VirtualRide')&&a.average_watts>0&&new Date(a.start_date).getFullYear()===thisYear-1; });
 
-    if (has2025 || has2026) {
-      // Use real Supabase data
-      const durMap = {5:0, 30:1, 60:2, 180:3, 300:4, 600:5, 1200:6, 1800:7, 3600:8};
-      const thisPowers = durations.map(function(d){ return yr2026[d] ? yr2026[d].watts : 0; });
-      const lastPowers = durations.map(function(d){ return yr2025[d] ? yr2025[d].watts : 0; });
-      const actNames2026 = durations.map(function(d){ return yr2026[d] ? yr2026[d].activity_name : ''; });
-      const actNames2025 = durations.map(function(d){ return yr2025[d] ? yr2025[d].activity_name : ''; });
+    function estimatePower(rides, dur) {
+      var relevant = rides.filter(function(a){ return a.moving_time >= dur; });
+      if (!relevant.length) return 0;
+      if (dur <= 5) {
+        var maxW = Math.max.apply(null, relevant.map(function(a){ return a.max_watts||0; }));
+        return maxW > 50 ? Math.min(maxW, 1200) : 0;
+      } else if (dur <= 30) {
+        var maxW2 = Math.max.apply(null, relevant.map(function(a){ return a.max_watts||0; }));
+        return maxW2 > 50 ? Math.round(Math.min(maxW2, 1000) * 0.85) : 0;
+      } else if (dur <= 60) {
+        var maxW3 = Math.max.apply(null, relevant.map(function(a){ return a.max_watts||0; }));
+        return maxW3 > 50 ? Math.round(Math.min(maxW3, 900) * 0.72) : 0;
+      } else if (dur <= 300) {
+        return Math.round(Math.max.apply(null, relevant.map(function(a){ return a.average_watts; })) * 1.08);
+      } else if (dur <= 1200) {
+        return Math.round(Math.max.apply(null, relevant.map(function(a){ return a.average_watts; })) * 1.03);
+      } else {
+        return Math.round(Math.max.apply(null, relevant.map(function(a){ return a.average_watts; })) * 0.98);
+      }
+    }
+
+    // Use verified real PRs for 2025 (from Strava screenshots)
+    const REAL_2025 = {5:1077,30:766,60:642,180:400,300:319,600:290,1200:263,1800:249,3600:231};
+    // Use verified stream data for 2026 short durations, estimates for long
+    const REAL_2026_SHORT = {5:842,30:500,60:402};
+
+    const thisPowers = durations.map(function(dur) {
+      if (REAL_2026_SHORT[dur]) return REAL_2026_SHORT[dur];
+      return estimatePower(rides2026, dur);
+    });
+    const lastPowers = durations.map(function(dur) {
+      if (REAL_2025[dur]) return REAL_2025[dur];
+      return estimatePower(rides2025, dur);
+    });
+
+    if (true) {
 
     barsEl.innerHTML = labels.map(function(label,i) {
       var tp = thisPowers[i], lp = lastPowers[i];
