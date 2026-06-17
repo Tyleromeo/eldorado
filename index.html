@@ -3105,11 +3105,10 @@ function estimateTSS(activity) {
     // 70% center zone, 15% each neighbor - approximates natural HR drift around the average
     const blendedWeight = centerWeight*0.70 + lowerWeight*0.15 + upperWeight*0.15;
 
-    // Calibration history: 0.49 -> 30/54/-23, then 0.66 -> 34/61/-27,
-    // target is Strava's 42/71/-29. Each step closes roughly 75% of the gap,
-    // suggesting a slightly nonlinear relationship (likely from rest days /
-    // zero-TSS days diluting the moving average) - nudging again toward 0.79.
-    return Math.round(minutes * blendedWeight * 0.79);
+    // Calibration history: 0.49 -> 30/54/-23, 0.66 -> 34/61/-27, 0.79 -> 36/66/-30
+    // (TSB now accurate at -30 vs target -29). Nudging once more to close the
+    // remaining CTL/ATL gap while preserving that TSB accuracy.
+    return Math.round(minutes * blendedWeight * 0.88);
   }
 
   // No HR and no power: fall back to a flat moderate-effort duration estimate
@@ -3133,7 +3132,9 @@ function computeMetrics(rides) {
   let earliestDate = now;
   rides.forEach(r => { const d = new Date(r.start_date); if (d < earliestDate) earliestDate = d; });
   const daysOfHistory = Math.min(365, Math.max(90, Math.round((now - earliestDate) / 86400000)));
-  console.log('computeMetrics: earliest activity =', earliestDate.toISOString().split('T')[0], '| daysOfHistory =', daysOfHistory, '| total activities =', rides.length);
+
+  // Seed CTL/ATL from the average TSS of the first two weeks of available data,
+  // rather than a flat guess, so the ramp-up period doesn't distort early values.
   let seedSum = 0, seedDays = 0;
   for (let i = daysOfHistory; i >= daysOfHistory - 13 && i >= 0; i--) {
     const d = new Date(now); d.setDate(d.getDate()-i);
@@ -3141,7 +3142,6 @@ function computeMetrics(rides) {
     seedSum += dayMap[key]||0; seedDays++;
   }
   const seed = seedDays ? seedSum/seedDays : 20;
-  console.log('computeMetrics: seed value =', Math.round(seed*10)/10);
 
   let ctl=seed, atl=seed, prevCtl=seed;
   for (let i=daysOfHistory;i>=0;i--) {
