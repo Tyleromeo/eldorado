@@ -569,6 +569,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div style="margin-top:1rem;font-size:12px;color:#7d8590">Based on your CSS (Critical Swim Speed). Update in <a href="#" onclick="showSection('settings')" style="color:#C9A227">Settings</a>.</div>
   </div>
   <div class="card">
+    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>VO2 max estimate</div></div>
+    <div id="vo2max-display"></div>
+    <div style="margin-top:1.5rem;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:13px;font-weight:600;color:#e6edf3">Trend over time</div>
+      <div id="vo2-filters" style="display:flex;gap:4px">
+        <button class="nav-btn" onclick="renderVO2Trend(7)">7d</button>
+        <button class="nav-btn" onclick="renderVO2Trend(30)">1mo</button>
+        <button class="nav-btn" onclick="renderVO2Trend(60)">2mo</button>
+        <button class="nav-btn" onclick="renderVO2Trend(90)">3mo</button>
+        <button class="nav-btn" onclick="renderVO2Trend(180)">6mo</button>
+        <button class="nav-btn" onclick="renderVO2Trend('ytd')">YTD</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#7d8590;margin:4px 0 8px" id="vo2-range-label"></div>
+    <div style="position:relative;height:220px"><canvas id="vo2-chart"></canvas></div>
+    <div id="vo2-insight" style="margin-top:0.75rem;font-size:13px;color:#7d8590"></div>
+    <div style="margin-top:1rem;font-size:12px;color:#7d8590">Estimates derived from your data, not a lab or wearable measurement. Daniels' formula uses your threshold pace setting; the HR-based figure uses your highest observed max heart rate from recent runs and your resting HR setting. The trend line recalculates VDOT week-by-week from your fastest sustained run pace, so it reflects actual changes in run performance over time.</div>
+  </div>
+  <div class="card">
     <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Recent activity zone breakdown</div></div>
     <div id="zone-breakdown"></div>
   </div>
@@ -632,6 +651,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="setting-row">
         <div><div class="setting-label">CSS (Critical Swim Speed)</div><div class="setting-sub">Your threshold swim pace (min/100m)</div></div>
         <input class="setting-input" id="set-css" type="text" placeholder="1:45" onchange="saveSettings()" /> <span style="font-size:12px;color:#7d8590;margin-left:4px">min/100m</span>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Resting heart rate</div><div class="setting-sub">Measured first thing in the morning, at rest. Used for HR-based VO2 max estimate</div></div>
+        <input class="setting-input" id="set-resting-hr" type="number" placeholder="58" onchange="saveSettings()" /> <span style="font-size:12px;color:#7d8590;margin-left:4px">bpm</span>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Age group</div><div class="setting-sub">Used for segment leaderboard filtering</div></div>
@@ -736,6 +759,7 @@ async function syncToSupabase(athlete_id, access_token) {
         average_watts: a.average_watts || null,
         max_watts: a.max_watts || null,
         average_heartrate: a.average_heartrate || null,
+        max_heartrate: a.max_heartrate || null,
         average_speed: a.average_speed || null,
         suffer_score: a.suffer_score || null,
         achievement_count: a.achievement_count || 0,
@@ -782,7 +806,7 @@ async function loadPowerPRsFromSupabase(athlete_id) {
 }
 
 // ==================== SETTINGS ====================
-const DEFAULTS = { ftp:249, weight:75, runPace:'7:30', css:'1:45', ageGroup:'35_44', city:'Smithtown, NY', units:'imperial' };
+const DEFAULTS = { ftp:249, weight:75, runPace:'7:30', css:'1:45', restingHR:58, ageGroup:'35_44', city:'Smithtown, NY', units:'imperial' };
 
 function getSettings() {
   try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ed_settings')||'{}')); }
@@ -796,6 +820,7 @@ function saveSettings() {
     weight: parseFloat(getVal('set-weight', DEFAULTS.weight)) || DEFAULTS.weight,
     runPace: getVal('set-run-pace', DEFAULTS.runPace) || DEFAULTS.runPace,
     css: getVal('set-css', DEFAULTS.css) || DEFAULTS.css,
+    restingHR: parseInt(getVal('set-resting-hr', DEFAULTS.restingHR)) || DEFAULTS.restingHR,
     ageGroup: getVal('set-age-group', DEFAULTS.ageGroup) || DEFAULTS.ageGroup,
     city: getVal('set-city', DEFAULTS.city) || DEFAULTS.city,
     units: getVal('set-units', DEFAULTS.units) || DEFAULTS.units
@@ -814,6 +839,7 @@ function loadSettingsUI() {
   setVal('set-weight', s.weight);
   setVal('set-run-pace', s.runPace);
   setVal('set-css', s.css);
+  setVal('set-resting-hr', s.restingHR);
   setVal('set-age-group', s.ageGroup);
   setVal('set-city', s.city);
   setVal('set-units', s.units);
@@ -1052,13 +1078,22 @@ async function loadAll(token) {
 
 async function loadSegmentAchievements(token) {
   const headers = {Authorization:`Bearer ${token}`};
-  const achRides = allActivities.filter(a => a.achievement_count > 0).slice(0, 10);
+  const achRides = allActivities.filter(a => a.achievement_count > 0).slice(0, 15);
   const koms = [], top10s = [];
+  const corrections = [];
 
   for (const ride of achRides) {
     try {
       const detail = await fetch(`https://www.strava.com/api/v3/activities/${ride.id}?include_all_efforts=true`, {headers}).then(r=>r.json());
       if (!detail.segment_efforts) continue;
+
+      // Detail endpoint returns the accurate, fully-computed achievement_count.
+      // The summary list endpoint (used for allActivities) can return a stale/lower number.
+      if (typeof detail.achievement_count === 'number' && detail.achievement_count !== ride.achievement_count) {
+        ride.achievement_count = detail.achievement_count;
+        corrections.push({ id: ride.id, achievement_count: detail.achievement_count });
+      }
+
       detail.segment_efforts.forEach(e => {
         if (!e.achievements || !e.achievements.length) return;
         e.achievements.forEach(a => {
@@ -1075,6 +1110,25 @@ async function loadSegmentAchievements(token) {
     } catch(e) {}
   }
   segmentAchievements = { koms, top10s };
+
+  // Persist corrected achievement counts to Supabase so future loads are accurate
+  // without needing to re-fetch activity details from Strava every time.
+  if (corrections.length) {
+    persistAchievementCorrections(corrections);
+  }
+}
+
+async function persistAchievementCorrections(corrections) {
+  for (const c of corrections) {
+    try {
+      await fetch(SB_REST + '/activities?id=eq.' + c.id, {
+        method: 'PATCH',
+        headers: SB_HEADERS,
+        body: JSON.stringify({ achievement_count: c.achievement_count })
+      });
+    } catch(e) { console.log('Achievement correction sync error:', e); }
+  }
+  console.log('Corrected achievement_count for ' + corrections.length + ' activities in Supabase');
 }
 
 // DASHBOARD
@@ -2096,6 +2150,37 @@ function secsToMmSs(secs) {
   return m+':'+(s<10?'0':'')+s;
 }
 
+function calcVO2Max() {
+  const s = getSettings();
+  const thresholdSecsPerMile = paceToSecs(s.runPace);
+  if (!thresholdSecsPerMile) return null;
+
+  // Daniels VDOT formula: estimate VO2 at threshold pace, then derive VO2max
+  // assuming threshold effort ~ 85% of VO2max (typical for a sustainable ~1hr race pace).
+  const velocityMPerMin = 1609.34 / (thresholdSecsPerMile / 60); // meters per minute
+  const vo2AtPace = -4.60 + 0.182258 * velocityMPerMin + 0.000104 * Math.pow(velocityMPerMin, 2);
+  const vdotEstimate = vo2AtPace / 0.85;
+
+  // HR-based cross-check: use observed max HR from recent hard runs and average HR
+  // at a known hard effort, via the Uth-Sorensen-Pedersen approximation:
+  // VO2max ≈ 15.3 × (HRmax / HRrest)
+  const runs = allActivities.filter(a => a.type === 'Run' && a.max_heartrate > 0).slice(0, 30);
+  let observedMaxHR = 0;
+  runs.forEach(r => { if (r.max_heartrate > observedMaxHR) observedMaxHR = r.max_heartrate; });
+
+  let hrEstimate = null;
+  if (observedMaxHR > 0) {
+    const restingHR = s.restingHR || 58;
+    hrEstimate = Math.round(15.3 * (observedMaxHR / restingHR));
+  }
+
+  return {
+    vdot: Math.round(vdotEstimate * 10) / 10,
+    hrBased: hrEstimate,
+    observedMaxHR: observedMaxHR || null
+  };
+}
+
 function renderZones() {
   const s = getSettings();
   const ftp = s.ftp || 220;
@@ -2152,6 +2237,109 @@ function renderZones() {
     swimZones.map(z=>'<tr><td><span class="zone-color" style="background:'+z.color+'"></span>'+z.name+'</td><td>'+secsToMmSs(Math.round(cssSecs*z.mult))+'</td><td style="color:#7d8590;font-size:12px">'+z.desc+'</td></tr>').join('')+'</tbody>';
 
   renderZoneBreakdown();
+  renderVO2Max();
+}
+
+function renderVO2Max() {
+  const el = document.getElementById('vo2max-display');
+  if (!el) return;
+  const v = calcVO2Max();
+  if (!v) { el.innerHTML = '<p style="font-size:13px;color:#7d8590">Set a threshold run pace in Settings to see an estimate.</p>'; return; }
+
+  let hrRow = '';
+  if (v.hrBased) {
+    hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">'+v.hrBased+'</div><div class="metric-sub">From max HR of '+v.observedMaxHR+' bpm</div></div>';
+  } else {
+    hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">--</div><div class="metric-sub">No max HR data found in recent runs</div></div>';
+  }
+
+  el.innerHTML = '<div class="g2">'+
+    '<div class="metric" style="margin-top:0"><div class="metric-label">Daniels VDOT estimate</div><div class="metric-val">'+v.vdot+'</div><div class="metric-sub">From '+getSettings().runPace+' /mi threshold pace</div></div>'+
+    hrRow+
+    '</div>';
+
+  renderVO2Trend(90);
+}
+
+function vdotFromPaceSecs(secsPerMile) {
+  const velocityMPerMin = 1609.34 / (secsPerMile / 60);
+  const vo2AtPace = -4.60 + 0.182258 * velocityMPerMin + 0.000104 * Math.pow(velocityMPerMin, 2);
+  return vo2AtPace / 0.85;
+}
+
+function renderVO2Trend(range) {
+  document.querySelectorAll('#vo2-filters .nav-btn').forEach(function(b) {
+    b.classList.remove('active');
+    var txt = b.textContent.trim();
+    if ((range===7 && txt==='7d') || (range===30 && txt==='1mo') ||
+        (range===60 && txt==='2mo') || (range===90 && txt==='3mo') ||
+        (range===180 && txt==='6mo') || (range==='ytd' && txt==='YTD')) {
+      b.classList.add('active');
+    }
+  });
+
+  const now = new Date();
+  let cutoff;
+  if (range === 'ytd') cutoff = new Date(now.getFullYear(),0,1);
+  else { cutoff = new Date(now); cutoff.setDate(cutoff.getDate()-range); }
+
+  // Sustained runs only (15+ min) so pace reflects aerobic effort, not short jogs
+  const runs = allActivities
+    .filter(function(a){ return (a.type==='Run'||a.type==='TrailRun') && a.moving_time>=900 && a.average_speed>0 && new Date(a.start_date)>=cutoff; })
+    .sort(function(a,b){ return new Date(a.start_date)-new Date(b.start_date); });
+
+  const insightEl = document.getElementById('vo2-insight');
+  const rangeLabel = range==='ytd' ? 'YTD' : range+' days';
+
+  if (runs.length < 2) {
+    if (insightEl) insightEl.textContent = 'Not enough qualifying runs in this period ('+rangeLabel+' requested, '+runs.length+' found, 15+ min runs only). Try a longer range.';
+    if (charts['vo2']) charts['vo2'].destroy();
+    return;
+  }
+
+  // Group into weekly buckets, take the fastest pace (highest speed) per week as the VDOT input
+  const weekBuckets = {};
+  runs.forEach(function(r) {
+    const d = new Date(r.start_date);
+    const day = d.getUTCDay();
+    const diff = (day===0) ? 6 : day-1;
+    const monday = new Date(d);
+    monday.setUTCDate(monday.getUTCDate()-diff);
+    const key = monday.toISOString().split('T')[0];
+    const paceSecsPerMile = 1609.34 / r.average_speed;
+    if (!weekBuckets[key] || paceSecsPerMile < weekBuckets[key].paceSecs) {
+      weekBuckets[key] = { paceSecs: paceSecsPerMile, date: monday };
+    }
+  });
+
+  const weekKeys = Object.keys(weekBuckets).sort();
+  const labels = weekKeys.map(function(k){ return weekBuckets[k].date.toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+  const vdotSeries = weekKeys.map(function(k){ return Math.round(vdotFromPaceSecs(weekBuckets[k].paceSecs)*10)/10; });
+
+  const actualStart = labels[0];
+  const actualEnd = labels[labels.length-1];
+  var rangeEl = document.getElementById('vo2-range-label');
+  if (rangeEl) rangeEl.textContent = actualStart + ' - ' + actualEnd + ' (' + weekKeys.length + ' weeks, best pace per week)';
+
+  if (charts['vo2']) charts['vo2'].destroy();
+  const ctx = document.getElementById('vo2-chart').getContext('2d');
+  charts['vo2'] = new Chart(ctx, {
+    type:'line',
+    data:{labels, datasets:[
+      {label:'VDOT estimate',data:vdotSeries,borderColor:'#f85149',backgroundColor:'rgba(248,81,73,0.06)',borderWidth:2,pointRadius:2,pointBackgroundColor:'#f85149',tension:0.3,fill:true}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:10},maxTicksLimit:8}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}}}
+      }}
+  });
+
+  const first = vdotSeries[0], last = vdotSeries[vdotSeries.length-1];
+  const change = Math.round((last-first)*10)/10;
+  const dir = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
+  if (insightEl) insightEl.textContent = 'VDOT estimate is ' + dir + ' ' + Math.abs(change) + ' over this period (from ' + first + ' to ' + last + '), based on your fastest sustained run pace each week. This tracks relative change, not an absolute lab value.';
 }
 
 function renderZoneBreakdown() {
