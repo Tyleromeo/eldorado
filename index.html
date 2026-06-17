@@ -304,12 +304,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <button class="nav-btn" onclick="setTrendRange('ytd', this)">YTD</button>
       </div>
     </div>
-    <div class="chart-wrap chart-wrap-md"><canvas id="fitness-chart"></canvas></div>
+    <div class="chart-wrap" style="height:240px"><canvas id="fitness-chart"></canvas></div>
     <div class="chart-legend">
       <div class="legend-item"><span class="legend-line" style="background:#FC4C02"></span>Fitness (CTL)</div>
-      <div class="legend-item"><span class="legend-line" style="background:#666"></span>Fatigue (ATL)</div>
-      <div class="legend-item"><span class="legend-line" style="background:#C9A227"></span>Form (TSB)</div>
+      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Fatigue (ATL)</div>
     </div>
+    <div style="margin-top:1.25rem;font-size:13px;font-weight:600;color:#e6edf3">Form (TSB)</div>
+    <div class="chart-wrap" style="height:130px;margin-top:0.5rem"><canvas id="form-chart"></canvas></div>
+    <div class="chart-legend">
+      <div class="legend-item"><span class="legend-line" style="background:#3fb950"></span>Fresh (&gt;5)</div>
+      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Neutral</div>
+      <div class="legend-item"><span class="legend-line" style="background:#d29922"></span>Tired</div>
+      <div class="legend-item"><span class="legend-line" style="background:#f85149"></span>Very fatigued (&lt;-30)</div>
+    </div>
+
   </div>
 
   <div class="g2" style="margin-bottom:0">
@@ -1406,6 +1414,7 @@ function setTrendRange(range, el) {
 
 function renderFitnessChart(rides) {
   if (charts['fitness']) { charts['fitness'].destroy(); }
+  if (charts['form']) { charts['form'].destroy(); }
   const dayMap = buildDayMap(rides);
   const now = new Date();
   const range = currentTrendRange;
@@ -1443,14 +1452,10 @@ function renderFitnessChart(rides) {
     ctl=ctl+((dayMap[key]||0)-ctl)/42;
     atl=atl+((dayMap[key]||0)-atl)/7;
     
-    // Only add to display after warmup period
     if (i <= totalDays) {
-      // Sample frequency based on range
       const sampleEvery = range === 7 ? 1 : range === 30 ? 2 : range === 60 ? 3 : range === 84 ? 4 : range === 168 ? 7 : 5;
       if (i % sampleEvery === 0 || i === 0) {
-        const fmt = totalDays <= 30 
-          ? {month:'short', day:'numeric'} 
-          : {month:'short', day:'numeric'};
+        const fmt = {month:'short', day:'numeric'};
         labels.push(d.toLocaleDateString('en-US', fmt));
         ctlArr.push(Math.round(ctl));
         atlArr.push(Math.round(atl));
@@ -1458,24 +1463,36 @@ function renderFitnessChart(rides) {
       }
     }
   }
-  
+
+  // Panel 1: Fitness & Fatigue as filled areas, sharing one axis since both
+  // are always-positive training load values on the same scale.
   const ctx = document.getElementById('fitness-chart').getContext('2d');
   charts['fitness'] = new Chart(ctx, {
     type:'line', data:{labels, datasets:[
-      {label:'Fitness',data:ctlArr,borderColor:'#FC4C02',borderWidth:2,pointRadius:0,tension:0.4,fill:false,yAxisID:'yLoad'},
-      {label:'Fatigue',data:atlArr,borderColor:'#666',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false,yAxisID:'yLoad'},
-      {label:'Form',data:tsbArr,borderColor:'#C9A227',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false,yAxisID:'yForm'}
+      {label:'Fitness',data:ctlArr,borderColor:'#FC4C02',backgroundColor:'rgba(252,76,2,0.12)',borderWidth:2,pointRadius:0,tension:0.3,fill:true},
+      {label:'Fatigue',data:atlArr,borderColor:'#7d8590',backgroundColor:'rgba(125,133,144,0.08)',borderWidth:1.5,pointRadius:0,tension:0.3,fill:true}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
         x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11},maxTicksLimit:8}},
-        // Fitness and Fatigue share a 0-and-up scale, since both are always positive
-        // training load values - this keeps the Fitness line's real movement visible
-        // instead of being flattened by Form's much wider swing range.
-        yLoad:{position:'left',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}},title:{display:true,text:'Fitness / Fatigue',color:'#7d8590',font:{size:10}}},
-        // Form (TSB) gets its own axis since it swings both positive and negative
-        // on a totally different scale than the load values.
-        yForm:{position:'right',grid:{display:false},ticks:{color:'#7d8590',font:{size:11}},title:{display:true,text:'Form',color:'#7d8590',font:{size:10}}}
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}},beginAtZero:true}
+      }
+    }
+  });
+
+  // Panel 2: Form (TSB) as color-coded bars - the sign and zone matter more
+  // than the exact value, so color communicates fresh/neutral/tired/very
+  // fatigued at a glance instead of relying on a shared numeric scale.
+  const tsbColors = tsbArr.map(v => v > 5 ? '#3fb950' : v > -10 ? '#7d8590' : v > -30 ? '#d29922' : '#f85149');
+  const formCtx = document.getElementById('form-chart').getContext('2d');
+  charts['form'] = new Chart(formCtx, {
+    type:'bar', data:{labels, datasets:[
+      {label:'Form',data:tsbArr,backgroundColor:tsbColors,borderRadius:2,barPercentage:0.8,categoryPercentage:0.9}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#7d8590',font:{size:10},maxTicksLimit:8}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}}}
       }
     }
   });
@@ -3089,10 +3106,11 @@ function estimateTSS(activity) {
     // 70% center zone, 15% each neighbor - approximates natural HR drift around the average
     const blendedWeight = centerWeight*0.70 + lowerWeight*0.15 + upperWeight*0.15;
 
-    // Calibration: initial constant of 0.49 (from a single run's exact zone
-    // breakdown) produced CTL/ATL/TSB of 30/54/-23 against Strava's own
-    // 42/71/-29 reading. Scaling up by ~1.35x to close that gap.
-    return Math.round(minutes * blendedWeight * 0.66);
+    // Calibration history: 0.49 -> 30/54/-23, then 0.66 -> 34/61/-27,
+    // target is Strava's 42/71/-29. Each step closes roughly 75% of the gap,
+    // suggesting a slightly nonlinear relationship (likely from rest days /
+    // zero-TSS days diluting the moving average) - nudging again toward 0.79.
+    return Math.round(minutes * blendedWeight * 0.79);
   }
 
   // No HR and no power: fall back to a flat moderate-effort duration estimate
