@@ -1351,7 +1351,7 @@ function renderDashboard() {
   list.innerHTML = rides.slice(0,8).map(r => activityRow(r)).join('');
 
   // Coaching
-  renderCoaching(metrics);
+  renderCoaching(metrics, rides);
   checkNotifications(allActivities, metrics);
   loadClubEvents();
   renderStreaks();
@@ -1376,11 +1376,13 @@ function activityRow(r) {
   </div>`;
 }
 
-function renderCoaching(metrics) {
+function renderCoaching(metrics, allActs) {
   const area = document.getElementById('coaching-area');
   let items = [];
   const {ctl, atl, tsb} = metrics;
+  const now = new Date();
 
+  // ---- Form / Fitness (existing rules) ----
   if (tsb < -30) items.push({title:`Form ${tsb} — rest or Z1-Z2 only`, text:'Deep in overreaching. No segment hunting, no hard climbs. 2-3 easy days will drop fatigue fast.'});
   else if (tsb < -10) items.push({title:'Carry fatigue — moderate effort', text:'Z2-Z3 is appropriate. Avoid maximal efforts. You\'re building but need patience with recovery.'});
   else if (tsb > 10) items.push({title:`Form +${tsb} — good day to push`, text:'This is when PRs happen. Fresh legs on absorbed fitness. Consider targeting segments today.'});
@@ -1389,6 +1391,69 @@ function renderCoaching(metrics) {
   if (ctl < 20) items.push({title:'Build base first', text:'Focus on consistent volume before intensity. Max 5-7 CTL points per week to avoid overload.'});
   else if (ctl > 55) items.push({title:'Strong base — protect it', text:'You\'re in excellent shape. Smart recovery between efforts keeps you here.'});
   else items.push({title:'Fitness building', text:`CTL ${ctl} and climbing. On track for peak shape in 4-6 weeks if consistent and healthy.`});
+
+  // ---- Consecutive training days / rest day pattern ----
+  const activeDaySet = {};
+  allActs.forEach(a => { activeDaySet[a.start_date.split('T')[0]] = true; });
+  let consecutiveDays = 0;
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(now); d.setDate(d.getDate()-i);
+    const key = d.toISOString().split('T')[0];
+    if (activeDaySet[key]) consecutiveDays++;
+    else break;
+  }
+  let daysSinceRest = consecutiveDays;
+  if (daysSinceRest >= 10) {
+    items.push({title:`${daysSinceRest} days without rest`, text:'Extended streaks build fitness fast but raise injury and illness risk. Consider a deliberate easy or off day in the next 48 hours, especially if Form is already negative.'});
+  } else if (daysSinceRest >= 6) {
+    items.push({title:`${daysSinceRest}-day active streak`, text:'Solid consistency. Keep an eye on how the body feels; a rest day in the next day or two would be a good proactive call rather than waiting for a forced one.'});
+  }
+
+  // ---- Weekly volume trend: this week vs last week ----
+  const thisWeekStart = new Date(now); thisWeekStart.setDate(now.getDate()-now.getDay()); thisWeekStart.setHours(0,0,0,0);
+  const lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate()-7);
+  const twoWeeksAgoStart = new Date(thisWeekStart); twoWeeksAgoStart.setDate(twoWeeksAgoStart.getDate()-14);
+
+  const thisWeekActs = allActs.filter(a => new Date(a.start_date) >= thisWeekStart);
+  const lastWeekActs = allActs.filter(a => new Date(a.start_date) >= lastWeekStart && new Date(a.start_date) < thisWeekStart);
+  const twoWeeksAgoActs = allActs.filter(a => new Date(a.start_date) >= twoWeeksAgoStart && new Date(a.start_date) < lastWeekStart);
+
+  const thisWeekMi = thisWeekActs.reduce((s,a)=>s+a.distance,0)/1609.34;
+  const lastWeekMi = lastWeekActs.reduce((s,a)=>s+a.distance,0)/1609.34;
+  const twoWeeksAgoMi = twoWeeksAgoActs.reduce((s,a)=>s+a.distance,0)/1609.34;
+
+  if (lastWeekMi > 5) { // only compare if there's a meaningful baseline
+    const pctChange = Math.round(((thisWeekMi - lastWeekMi) / lastWeekMi) * 100);
+    if (pctChange > 40) {
+      items.push({title:`Volume up ${pctChange}% vs last week`, text:`This week's ${Math.round(thisWeekMi)} mi vs last week's ${Math.round(lastWeekMi)} mi is a big jump. The general guidance is to avoid more than ~10% week-over-week increases to limit injury risk, large jumps like this are worth following with an easier week.`});
+    } else if (pctChange < -40 && twoWeeksAgoMi > 5) {
+      items.push({title:`Volume down ${Math.abs(pctChange)}% vs last week`, text:`A notable drop from ${Math.round(lastWeekMi)} mi to ${Math.round(thisWeekMi)} mi so far. If this is planned recovery, good. If it's from time constraints or fatigue, worth checking in on whether anything needs adjusting.`});
+    }
+  }
+
+  // ---- VO2 trend context (reuses the same calc as the Zones page) ----
+  try {
+    const vo2Runs = allActs
+      .filter(a => (a.type==='Run'||a.type==='TrailRun') && a.moving_time>=900 && a.average_speed>0)
+      .sort((a,b) => new Date(a.start_date) - new Date(b.start_date));
+    if (vo2Runs.length >= 4) {
+      const cutoff30 = new Date(now); cutoff30.setDate(cutoff30.getDate()-30);
+      const cutoff60 = new Date(now); cutoff60.setDate(cutoff60.getDate()-60);
+      const recentRuns = vo2Runs.filter(r => new Date(r.start_date) >= cutoff30);
+      const priorRuns = vo2Runs.filter(r => new Date(r.start_date) >= cutoff60 && new Date(r.start_date) < cutoff30);
+      if (recentRuns.length && priorRuns.length) {
+        const fastestPace = runs => Math.min(...runs.map(r => 1609.34/r.average_speed));
+        const recentVdot = vdotFromPaceSecs(fastestPace(recentRuns));
+        const priorVdot = vdotFromPaceSecs(fastestPace(priorRuns));
+        const vdotChange = Math.round((recentVdot - priorVdot)*10)/10;
+        if (vdotChange > 0.5) {
+          items.push({title:'Running fitness trending up', text:`Estimated VDOT is up ~${vdotChange} over the last 30 days vs the prior 30. Your run pace at a given effort is improving, a good sign the aerobic base is paying off.`});
+        } else if (vdotChange < -0.5) {
+          items.push({title:'Running fitness trending down', text:`Estimated VDOT is down ~${Math.abs(vdotChange)} over the last 30 days vs the prior 30. Could be normal fatigue from high training load, heat, or just less sharp running lately, worth keeping an eye on rather than ignoring.`});
+        }
+      }
+    }
+  } catch(e) { /* VO2 helper not available, skip silently */ }
 
   area.innerHTML = items.map(i=>`<div class="coach-item"><div class="coach-title">${i.title}</div><div class="coach-text">${i.text}</div></div>`).join('');
 }
