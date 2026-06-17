@@ -1035,7 +1035,16 @@ async function loadAll(token) {
   const headers = {Authorization:`Bearer ${token}`};
 
   // Athlete
-  const athlete = await fetch('https://www.strava.com/api/v3/athlete', {headers}).then(r=>r.json());
+  const athleteResp = await fetch('https://www.strava.com/api/v3/athlete', {headers});
+  if (athleteResp.status === 429) {
+    showError('Strava rate limit hit (too many requests in the last 15 minutes). Strava resets its limit at :00, :15, :30, and :45 past the hour - try again after the next one of those times.');
+    return;
+  }
+  if (!athleteResp.ok) {
+    showError('Strava returned an error (status ' + athleteResp.status + '). Try reconnecting if this persists.');
+    return;
+  }
+  const athlete = await athleteResp.json();
   if (athlete.errors) { showError('Invalid token.'); return; }
   athleteData = athlete;
 
