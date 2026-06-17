@@ -2645,7 +2645,7 @@ async function loadClubEvents() {
         <div>
           <div class="row-name" style="display:flex;align-items:center;gap:6px">
             <span style="font-size:10px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor};border-radius:4px;padding:1px 6px;font-weight:600">${typeLabel}</span>
-            <a href="https://www.strava.com/clubs/${e.club_id}/group_events/${e.id}" target="_blank" style="color:#e6edf3;text-decoration:none">${e.title}</a>
+            <a href="https://www.strava.com/clubs/${e.club_id}/group_events" target="_blank" style="color:#e6edf3;text-decoration:none" title="Opens this club's events list, since individual event links can go stale on Strava">${e.title}</a>
             ${isToday||isTomorrow ? `<span class="badge b-gold">${dayLabel}</span>` : ''}
           </div>
           <div class="row-meta">${dateStr} at ${timeStr} &middot; ${e.club_name}</div>
