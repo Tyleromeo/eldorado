@@ -1417,13 +1417,25 @@ function renderFitnessChart(rides) {
   } else {
     totalDays = range;
   }
-  
-  // We need to warm up CTL/ATL for 90 days before the display window
-  const warmupDays = 90;
-  const totalCalcDays = totalDays + warmupDays;
-  
+
+  // Match computeMetrics: use real training history (up to 1 year) for warmup,
+  // and seed from the actual average TSS of the earliest two weeks rather than
+  // a flat 20, so the displayed trend doesn't start from an artificial low point.
+  let earliestDate = now;
+  rides.forEach(r => { const d = new Date(r.start_date); if (d < earliestDate) earliestDate = d; });
+  const daysOfHistory = Math.min(365, Math.max(90, Math.round((now - earliestDate) / 86400000)));
+  const totalCalcDays = Math.max(totalDays + 90, daysOfHistory);
+
+  let seedSum = 0, seedDays = 0;
+  for (let i = totalCalcDays; i >= totalCalcDays - 13 && i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate()-i);
+    const key = d.toISOString().split('T')[0];
+    seedSum += dayMap[key]||0; seedDays++;
+  }
+  const seed = seedDays ? seedSum/seedDays : 20;
+
   const labels=[], ctlArr=[], atlArr=[], tsbArr=[];
-  let ctl=20, atl=20;
+  let ctl=seed, atl=seed;
   
   for (let i=totalCalcDays; i>=0; i--) {
     const d=new Date(now); d.setDate(d.getDate()-i);
@@ -1450,14 +1462,20 @@ function renderFitnessChart(rides) {
   const ctx = document.getElementById('fitness-chart').getContext('2d');
   charts['fitness'] = new Chart(ctx, {
     type:'line', data:{labels, datasets:[
-      {label:'Fitness',data:ctlArr,borderColor:'#FC4C02',borderWidth:2,pointRadius:0,tension:0.4,fill:false},
-      {label:'Fatigue',data:atlArr,borderColor:'#666',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false},
-      {label:'Form',data:tsbArr,borderColor:'#C9A227',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false}
+      {label:'Fitness',data:ctlArr,borderColor:'#FC4C02',borderWidth:2,pointRadius:0,tension:0.4,fill:false,yAxisID:'yLoad'},
+      {label:'Fatigue',data:atlArr,borderColor:'#666',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false,yAxisID:'yLoad'},
+      {label:'Form',data:tsbArr,borderColor:'#C9A227',borderWidth:1.5,pointRadius:0,tension:0.4,fill:false,yAxisID:'yForm'}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{
         x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11},maxTicksLimit:8}},
-        y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}}}
+        // Fitness and Fatigue share a 0-and-up scale, since both are always positive
+        // training load values - this keeps the Fitness line's real movement visible
+        // instead of being flattened by Form's much wider swing range.
+        yLoad:{position:'left',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}},title:{display:true,text:'Fitness / Fatigue',color:'#7d8590',font:{size:10}}},
+        // Form (TSB) gets its own axis since it swings both positive and negative
+        // on a totally different scale than the load values.
+        yForm:{position:'right',grid:{display:false},ticks:{color:'#7d8590',font:{size:11}},title:{display:true,text:'Form',color:'#7d8590',font:{size:10}}}
       }
     }
   });
@@ -3071,7 +3089,10 @@ function estimateTSS(activity) {
     // 70% center zone, 15% each neighbor - approximates natural HR drift around the average
     const blendedWeight = centerWeight*0.70 + lowerWeight*0.15 + upperWeight*0.15;
 
-    return Math.round(minutes * blendedWeight * 0.49);
+    // Calibration: initial constant of 0.49 (from a single run's exact zone
+    // breakdown) produced CTL/ATL/TSB of 30/54/-23 against Strava's own
+    // 42/71/-29 reading. Scaling up by ~1.35x to close that gap.
+    return Math.round(minutes * blendedWeight * 0.66);
   }
 
   // No HR and no power: fall back to a flat moderate-effort duration estimate
