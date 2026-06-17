@@ -331,10 +331,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="card" style="margin-bottom:0">
       <div class="card-title">
         <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>Today's coaching</div>
-        <button onclick="refreshAICoaching()" id="ai-refresh-btn" style="background:transparent;border:1px solid #30363d;border-radius:6px;padding:4px 10px;font-size:11px;color:#7d8590;cursor:pointer">✨ AI insight</button>
       </div>
       <div id="coaching-area"></div>
-      <div id="ai-coaching-area" style="margin-top:10px"></div>
     </div>
   </div>
 </div>
@@ -2476,82 +2474,6 @@ function showToast(icon, title, body, duration) {
   document.getElementById('toast-body').textContent = body;
   t.classList.add('show');
   setTimeout(function() { t.classList.remove('show'); }, duration);
-}
-
-// ==================== AI COACHING ====================
-async function refreshAICoaching() {
-  const btn = document.getElementById('ai-refresh-btn');
-  const area = document.getElementById('ai-coaching-area');
-  btn.textContent = 'Loading...';
-  btn.disabled = true;
-  area.innerHTML = '<div style="font-size:12px;color:#7d8590;padding:8px 0">Getting AI insight...</div>';
-
-  const s = getSettings();
-  const metrics = computeMetrics(allActivities);
-  const rides = allActivities.filter(a=>a.type==='Ride'||a.type==='VirtualRide').slice(0,5);
-  const runs = allActivities.filter(a=>a.type==='Run'||a.type==='TrailRun').slice(0,3);
-  const recentNames = allActivities.slice(0,5).map(a=>a.name).join(', ');
-  const weekMi = allActivities.filter(a=>{
-    const ws=new Date(); ws.setDate(ws.getDate()-ws.getDay()); ws.setHours(0,0,0,0);
-    return new Date(a.start_date)>=ws;
-  }).reduce((s,a)=>s+a.distance/1609.34,0);
-
-  const prompt = `You are ElDorado, a personal cycling and running coach. Analyze this athlete's data and give specific, actionable coaching advice for today and the next 7 days.
-
-ATHLETE STATS:
-- Name: ${athleteData ? athleteData.firstname + ' ' + athleteData.lastname : 'Athlete'}
-- FTP: ${s.ftp}w, Weight: ${s.weight}kg (${(s.ftp/s.weight).toFixed(1)} w/kg)
-- Fitness (CTL): ${metrics.ctl} (+${metrics.ctl - metrics.prevCtl} this week)
-- Fatigue (ATL): ${metrics.atl}
-- Form (TSB): ${metrics.tsb} (${metrics.tsb > 5 ? 'FRESH' : metrics.tsb > -10 ? 'NEUTRAL' : metrics.tsb > -30 ? 'TIRED' : 'VERY FATIGUED'})
-- Miles this week: ${Math.round(weekMi)}
-- Recent activities: ${recentNames}
-- Total recent activities: ${allActivities.length}
-
-Give 3-4 specific insights covering:
-1. Today's recommended effort and why
-2. This week's training focus
-3. One specific thing to watch or improve
-4. A motivational observation about their recent progress
-
-Be specific, not generic. Reference their actual numbers. Keep each point to 2-3 sentences. Format as plain paragraphs with bold headers using **Header:** format.`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await response.json();
-    const text = data.content && data.content[0] ? data.content[0].text : 'Could not generate insight.';
-    
-    // Format the response
-    const formatted = text
-      .split('\n')
-      .filter(l => l.trim())
-      .map(line => {
-        // Bold headers **text:** -> styled
-        line = line.replace(/\*\*([^*]+):\*\*/g, '<strong style="color:#C9A227">$1:</strong>');
-        line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        return `<p style="font-size:13px;color:#7d8590;line-height:1.6;margin-bottom:8px">${line}</p>`;
-      }).join('');
-    
-    area.innerHTML = `<div style="border-top:1px solid #21262d;padding-top:12px;margin-top:4px">
-      <div style="font-size:11px;color:#444d56;margin-bottom:8px;display:flex;align-items:center;gap:4px">
-        <span style="color:#C9A227">✨</span> AI-powered insight
-      </div>
-      ${formatted}
-    </div>`;
-  } catch(e) {
-    area.innerHTML = `<div style="font-size:12px;color:#f85149;padding:8px 0">Could not load AI insight: ${e.message}</div>`;
-  }
-  
-  btn.textContent = '✨ AI insight';
-  btn.disabled = false;
 }
 
 // ==================== CLUB EVENTS ====================
