@@ -1337,7 +1337,7 @@ function renderDashboard() {
   document.getElementById('atl-sub').textContent = metrics.atl > 60 ? 'High load' : metrics.atl > 30 ? 'Moderate' : 'Low load';
 
   const now = new Date();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate()-now.getDay()); weekStart.setHours(0,0,0,0);
+  const weekStart = new Date(now); { const d = now.getDay(); weekStart.setDate(now.getDate() - (d===0?6:d-1)); } weekStart.setHours(0,0,0,0);
   const weekActs = rides.filter(r => new Date(r.start_date) >= weekStart);
   const weekMi = weekActs.reduce((s,r)=>s+r.distance,0)/1609.34;
   document.getElementById('week-mi').textContent = Math.round(weekMi)+' mi';
@@ -1410,7 +1410,7 @@ function renderCoaching(metrics, allActs) {
   }
 
   // ---- Weekly volume trend: this week vs last week ----
-  const thisWeekStart = new Date(now); thisWeekStart.setDate(now.getDate()-now.getDay()); thisWeekStart.setHours(0,0,0,0);
+  const thisWeekStart = new Date(now); { const d = now.getDay(); thisWeekStart.setDate(now.getDate() - (d===0?6:d-1)); } thisWeekStart.setHours(0,0,0,0);
   const lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate()-7);
   const twoWeeksAgoStart = new Date(thisWeekStart); twoWeeksAgoStart.setDate(twoWeeksAgoStart.getDate()-14);
 
@@ -2053,11 +2053,12 @@ function renderCalendar() {
     if (!dayMap[d]) dayMap[d] = [];
     dayMap[d].push(a);
   });
-  const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const firstDayRaw = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const firstDay = (firstDayRaw === 0) ? 6 : firstDayRaw - 1; // convert to Monday-first offset
   const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
   const todayStr = now.toISOString().split('T')[0];
 
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
   let html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">';
   days.forEach(d => { html += `<div style="text-align:center;font-size:10px;color:#7d8590;padding:4px 0;font-weight:600">${d}</div>`; });
@@ -2216,7 +2217,7 @@ function getGoalProgress(goal, activities) {
   } else if (goal.type==='ctl') {
     current = computeMetrics(activities).ctl; unit='CTL'; detail='Current CTL: '+current;
   } else if (goal.type==='frequency') {
-    const ws=new Date(now); ws.setDate(now.getDate()-now.getDay()); ws.setHours(0,0,0,0);
+    const ws=new Date(now); { const d = now.getDay(); ws.setDate(now.getDate() - (d===0?6:d-1)); } ws.setHours(0,0,0,0);
     current = periodActs.filter(a=>(a.type==='Ride'||a.type==='VirtualRide')&&new Date(a.start_date)>=ws).length;
     unit='rides'; detail=current+' rides this week';
   }
@@ -2553,7 +2554,17 @@ async function loadClubEvents() {
 
   try {
     // Get athlete clubs first
-    const clubs = await fetch('https://www.strava.com/api/v3/athlete/clubs?per_page=30', {headers}).then(r=>r.json());
+    const clubsResp = await fetch('https://www.strava.com/api/v3/athlete/clubs?per_page=30', {headers});
+    if (!clubsResp.ok) {
+      if (clubsResp.status === 429) {
+        document.getElementById('events-list').innerHTML = '<p style="font-size:13px;color:#f85149">Strava rate limit hit while loading clubs. Try refreshing in a few minutes.</p>';
+      } else {
+        document.getElementById('events-list').innerHTML = '<p style="font-size:13px;color:#f85149">Could not load clubs (Strava returned '+clubsResp.status+').</p>';
+      }
+      eventsLoaded = false; // allow retry on next dashboard load rather than getting stuck
+      return;
+    }
+    const clubs = await clubsResp.json();
     if (!Array.isArray(clubs) || !clubs.length) {
       document.getElementById('events-list').innerHTML = '<p style="font-size:13px;color:#7d8590">No clubs found. Join clubs on Strava to see group events here.</p>';
       return;
@@ -2561,14 +2572,17 @@ async function loadClubEvents() {
 
     // Fetch events for each club
     const allEvents = [];
-    for (const club of clubs.slice(0, 3)) {
+    let anyClubFailed = false;
+    for (const club of clubs.slice(0, 8)) {
       try {
-        const events = await fetch('https://www.strava.com/api/v3/clubs/'+club.id+'/group_events', {headers}).then(r=>r.json());
+        const evResp = await fetch('https://www.strava.com/api/v3/clubs/'+club.id+'/group_events', {headers});
+        if (!evResp.ok) { anyClubFailed = true; continue; }
+        const events = await evResp.json();
         if (Array.isArray(events)) {
           events.forEach(function(e) { allEvents.push(Object.assign({}, e, {club_name: club.name, club_id: club.id})); });
         }
         await new Promise(function(r){setTimeout(r,300);});
-      } catch(e) {}
+      } catch(e) { anyClubFailed = true; }
     }
 
     // Sort by upcoming date
@@ -2582,7 +2596,9 @@ async function loadClubEvents() {
     document.getElementById('events-count').textContent = upcoming.length + ' upcoming';
 
     if (!upcoming.length) {
-      document.getElementById('events-list').innerHTML = '<p style="font-size:13px;color:#7d8590">No upcoming group events found in your clubs.</p>';
+      document.getElementById('events-list').innerHTML = anyClubFailed
+        ? '<p style="font-size:13px;color:#d29922">No upcoming events found, but some clubs failed to load (possible rate limit). Try refreshing in a few minutes.</p>'
+        : '<p style="font-size:13px;color:#7d8590">No upcoming group events found in your clubs.</p>';
       return;
     }
 
