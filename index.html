@@ -3026,12 +3026,43 @@ function removeKeyword(kw) {
 }
 
 // HELPERS
-function estimateTSS(ride) {
-  const ftp = (window.USER_FTP || getSettings().ftp || 220);
-  const watts = ride.average_watts||0;
-  if (watts>0) return Math.round((ride.moving_time*watts*(watts/ftp))/(ftp*3600)*100);
-  const hrs=ride.moving_time/3600;
-  return Math.round(hrs*50*(ride.average_heartrate?ride.average_heartrate/155:0.9));
+function estimateTSS(activity) {
+  const s = getSettings();
+  const ftp = (window.USER_FTP || s.ftp || 220);
+  const type = activity.type;
+
+  // Power-based rides: closer to a true Normalized Power TSS using average watts
+  // as a stand-in for NP (we don't have the raw power stream to compute true NP).
+  const watts = activity.average_watts||0;
+  if (watts>0 && (type==='Ride'||type==='VirtualRide'||type==='Handcycle'||type==='EBikeRide')) {
+    return Math.round((activity.moving_time*watts*(watts/ftp))/(ftp*3600)*100);
+  }
+
+  // Pace-based runs: rTSS-style calculation using threshold pace from Settings.
+  // Intensity factor = (threshold pace / actual pace), squared, consistent with
+  // Daniels/Coggan-style running load models.
+  if ((type==='Run'||type==='TrailRun') && activity.average_speed>0) {
+    const thresholdSecsPerMile = paceToSecs(s.runPace);
+    const actualSecsPerMile = 1609.34 / activity.average_speed;
+    const intensityFactor = thresholdSecsPerMile / actualSecsPerMile; // faster than threshold = IF > 1
+    const hrs = activity.moving_time/3600;
+    return Math.round(hrs * Math.pow(intensityFactor,2) * 100);
+  }
+
+  // Pace-based swims using CSS from Settings, same IF-squared approach
+  if (type==='Swim' && activity.average_speed>0) {
+    const cssSecsPer100m = paceToSecs(s.css);
+    const actualSecsPer100m = 100 / activity.average_speed;
+    const intensityFactor = cssSecsPer100m / actualSecsPer100m;
+    const hrs = activity.moving_time/3600;
+    return Math.round(hrs * Math.pow(intensityFactor,2) * 100);
+  }
+
+  // Fallback for anything without power or qualifying pace data: HR-based estimate
+  // if HR is available, otherwise a flat moderate-effort assumption by duration.
+  const hrs = activity.moving_time/3600;
+  if (activity.average_heartrate>0) return Math.round(hrs*50*(activity.average_heartrate/155));
+  return Math.round(hrs*40);
 }
 
 function buildDayMap(rides) {
@@ -3043,8 +3074,26 @@ function buildDayMap(rides) {
 function computeMetrics(rides) {
   const dayMap=buildDayMap(rides);
   const now=new Date();
-  let ctl=20,atl=20,prevCtl=20;
-  for (let i=90;i>=0;i--) {
+
+  // Determine how far back we actually have data, up to a 1-year cap, so CTL has
+  // real runway to stabilize instead of starting from an arbitrary seed value
+  // close to "today". More history = more accurate fitness number.
+  let earliestDate = now;
+  rides.forEach(r => { const d = new Date(r.start_date); if (d < earliestDate) earliestDate = d; });
+  const daysOfHistory = Math.min(365, Math.max(90, Math.round((now - earliestDate) / 86400000)));
+
+  // Seed CTL/ATL from the average TSS of the first two weeks of available data,
+  // rather than a flat guess, so the ramp-up period doesn't distort early values.
+  let seedSum = 0, seedDays = 0;
+  for (let i = daysOfHistory; i >= daysOfHistory - 13 && i >= 0; i--) {
+    const d = new Date(now); d.setDate(d.getDate()-i);
+    const key = d.toISOString().split('T')[0];
+    seedSum += dayMap[key]||0; seedDays++;
+  }
+  const seed = seedDays ? seedSum/seedDays : 20;
+
+  let ctl=seed, atl=seed, prevCtl=seed;
+  for (let i=daysOfHistory;i>=0;i--) {
     const d=new Date(now); d.setDate(d.getDate()-i);
     const key=d.toISOString().split('T')[0];
     const tss=dayMap[key]||0;
