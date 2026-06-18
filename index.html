@@ -1318,6 +1318,25 @@ async function getScanProgress(athleteId) {
     };
     saveScanProgress(athleteId, progress);
   }
+
+  // Second self-heal pass: Strava's achievement array also includes
+  // personal-PR medals (category like 'pr'/'year_pr') which can have
+  // rank===1 with NO competitive meaning at all (e.g. just your only/fastest
+  // attempt on a segment you've ridden once or twice). Only category
+  // === 'overall' achievements represent real standing against other
+  // athletes - that's the only category that should count as a KOM or
+  // Top 10. Every entry has category stored, so this also needs no rescan.
+  if (!progress.reclassifiedV2 && (progress.koms.length || progress.top10s.length)) {
+    const all = [...progress.koms, ...progress.top10s];
+    const overallOnly = all.filter(e => e.category === 'overall');
+    progress = {
+      ...progress,
+      koms: overallOnly.filter(e => e.rank === 1),
+      top10s: overallOnly.filter(e => e.rank >= 2 && e.rank <= 10),
+      reclassifiedV2: true
+    };
+    saveScanProgress(athleteId, progress);
+  }
   return progress;
 }
 
@@ -1366,15 +1385,18 @@ async function scanKomChunk(token, athleteId) {
               elapsed: e.elapsed_time, rank: a.rank, category: a.type,
               date: ride.start_date
             };
-            // The achievement's "type" field is the leaderboard CATEGORY
-            // (overall, age_group, etc.), not the position - rank is the
-            // actual position within that category. A true KOM/CR is
-            // rank === 1 (in any category); ranks 2-10 are Top 10s.
-            // Using type==='overall' alone was the bug: it included every
-            // overall-category achievement regardless of rank, mislabeling
-            // 2nd-10th place finishes as KOMs.
-            if (a.rank === 1) progress.koms.push(obj);
-            else if (a.rank >= 2 && a.rank <= 10) progress.top10s.push(obj);
+            // Strava's achievement array mixes two unrelated achievement
+            // kinds: competitive leaderboard placement (category: 'overall',
+            // where rank = position among ALL athletes) and personal-best
+            // medals (category like 'pr' or 'year_pr', where rank = position
+            // among your OWN past efforts on that segment - even rank 1 here
+            // just means "your fastest attempt so far," often awarded on a
+            // segment's very first ride with no competitive meaning at all).
+            // Only 'overall' category achievements represent actual standing
+            // against other athletes - that's the only category we treat as
+            // a KOM/CR or Top 10.
+            if (a.type === 'overall' && a.rank === 1) progress.koms.push(obj);
+            else if (a.type === 'overall' && a.rank >= 2 && a.rank <= 10) progress.top10s.push(obj);
           });
         });
       }
