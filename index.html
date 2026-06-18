@@ -3483,7 +3483,7 @@ function renderActivityList() {
     const mi = (r.distance/1609.34).toFixed(1);
     const h = Math.floor(r.moving_time/3600), m = Math.floor((r.moving_time%3600)/60);
     const t = h > 0 ? h + 'h ' + m + 'm' : m + 'm';
-    const date = new Date(r.start_date).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+    const date = new Date(r.start_date).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
     const elev = r.total_elevation_gain ? Math.round(r.total_elevation_gain*3.281) + ' ft' : '';
     const watts = r.average_watts ? Math.round(r.average_watts) + 'w &middot; ' : '';
     const hr = r.average_heartrate ? Math.round(r.average_heartrate) + ' bpm &middot; ' : '';
