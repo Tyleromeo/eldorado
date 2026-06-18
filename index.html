@@ -1376,11 +1376,18 @@ function calcWeeklyStreak() {
     activeWeeks[getWeekStart(ds)] = true;
   });
   var streak = 0;
-  // Get start of current UTC week (Monday), then go back one week to last completed week
   var currentWeekStart = getWeekStart(todayUTC);
   var p = currentWeekStart.split('-');
   var weekDate = new Date(Date.UTC(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])));
-  weekDate.setUTCDate(weekDate.getUTCDate() - 7);
+
+  // If the current (in-progress) week already has at least one activity,
+  // count it - this matches Strava's own behavior, which counts the current
+  // week as soon as it has activity rather than waiting for it to complete.
+  // Only skip straight to last week if the current week has zero activity so far.
+  if (!activeWeeks[currentWeekStart]) {
+    weekDate.setUTCDate(weekDate.getUTCDate() - 7);
+  }
+
   while (true) {
     var ws = weekDate.toISOString().split('T')[0];
     if (activeWeeks[ws]) { streak++; weekDate.setUTCDate(weekDate.getUTCDate()-7); }
