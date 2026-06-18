@@ -698,6 +698,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <button class="gold-btn" onclick="saveSettings(); showToast('✅','Settings saved','Your preferences have been updated.')">Save settings</button>
   </div>
   <div class="card">
+    <div class="settings-title">Data & sync</div>
+    <div class="setting-row">
+      <div><div class="setting-label">Force full resync</div><div class="setting-sub">Re-fetches your complete activity history from Strava and refreshes the cache. Normally happens automatically every 6 hours, use this if data looks out of date (e.g. yearly totals missing older activities) and you don't want to wait.</div></div>
+      <button onclick="forceFullResync()" style="background:#1a2332;border:1px solid #58a6ff;border-radius:6px;padding:6px 14px;color:#58a6ff;cursor:pointer;font-size:13px">Resync now</button>
+    </div>
+  </div>
+  <div class="card">
     <div class="settings-title">Account</div>
     <div class="setting-row">
       <div><div class="setting-label">Disconnect Strava</div><div class="setting-sub">Clears your token and returns to login</div></div>
@@ -926,6 +933,12 @@ function disconnectStrava() {
   localStorage.removeItem('ed_token');
   localStorage.removeItem('ed_refresh');
   localStorage.removeItem('ed_expires');
+  location.reload();
+}
+
+function forceFullResync() {
+  if (!confirm('This will re-fetch your complete activity history from Strava (up to 25 pages) and may take a moment. Continue?')) return;
+  localStorage.removeItem('ed_last_full_sync');
   location.reload();
 }
 
