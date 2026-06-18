@@ -2731,23 +2731,6 @@ async function loadClubEvents() {
 
     document.getElementById('events-count').textContent = upcoming.length + ' upcoming';
 
-    // TEMP DEBUG: show what LiVelo/WolfPack events look like before filtering
-    const liveloWolfpackRaw = allUpcoming.filter(e => matchesText(e,'livelo') || matchesText(e,'wolfpack') || matchesText(e,'wolf pack'));
-    console.log('=== LiVelo/WolfPack raw events (pre-filter), matched:', liveloWolfpackRaw.length, '===');
-    liveloWolfpackRaw.slice(0,15).forEach(e => {
-      console.log(e.title, '|', e.club_name, '| next:', e.nextDate.toISOString(), '| occurrences in window:', (e.upcoming_occurrences||[]).filter(d => new Date(d) >= weekStart && new Date(d) < weekEnd).length);
-    });
-
-    // TEMP DEBUG: show ALL events from the LiVelo club specifically (not just
-    // ones with upcoming_occurrences), to find WNR even if it's titled
-    // differently or has zero upcoming occurrences listed by Strava right now.
-    const allLiveloEvents = allEvents.filter(e => matchesText(e,'livelo'));
-    console.log('=== ALL LiVelo club events (any title), total:', allLiveloEvents.length, '===');
-    allLiveloEvents.forEach(e => {
-      const occCount = (e.upcoming_occurrences||[]).length;
-      console.log(e.title, '| upcoming_occurrences count:', occCount, occCount ? '| first: '+e.upcoming_occurrences[0] : '(none)');
-    });
-
     if (!upcoming.length) {
       document.getElementById('events-list').innerHTML = anyClubFailed
         ? '<p style="font-size:13px;color:#d29922">No upcoming events found, but some clubs failed to load (possible rate limit). Try refreshing in a few minutes.</p>'
