@@ -503,6 +503,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <button class="nav-btn" id="kom-filter-hike" onclick="filterKomScan('hike')">Hike</button>
       </div>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="font-size:12px;color:#7d8590">Sort by:</span>
+      <button class="nav-btn active" id="kom-sort-date" onclick="setKomSortMode('date')" style="font-size:12px;padding:4px 10px">Most recent</button>
+      <button class="nav-btn" id="kom-sort-popularity" onclick="setKomSortMode('popularity')" style="font-size:12px;padding:4px 10px">Most competitive</button>
+    </div>
     <div id="kom-scan-status" style="font-size:13px;color:#7d8590;padding:8px 0"></div>
     <div id="kom-scan-controls" style="margin-bottom:12px"></div>
     <div class="g3" id="kom-scan-totals" style="margin-bottom:12px"></div>
@@ -1421,7 +1426,7 @@ async function scanKomChunk(token, athleteId) {
 async function enrichKomDetails(token, athleteId) {
   const headers = { Authorization: `Bearer ${token}` };
   const progress = await getScanProgress(athleteId);
-  const enriched = (await getCached(athleteId, 'kom_enriched_details_v2', 7*24*60*60*1000)) || {};
+  const enriched = (await getCached(athleteId, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
   const s = getSettings();
 
   // Enrich every segment with ANY achievement (KOM or Top 10), not just
@@ -1447,16 +1452,39 @@ async function enrichKomDetails(token, athleteId) {
 
       // Overall leaderboard - Strava restricted this a while back, so other
       // athletes' names/times may come back empty or stripped. We still try,
-      // but never assume it'll have usable entries.
+      // but never assume it'll have usable entries. Importantly, Strava
+      // automatically includes the authenticated user's own entry (with their
+      // current rank) in the response even if it's outside the top 10 -
+      // this is how we get the "current rank" that may differ from the
+      // historical rank stored in the achievement (e.g. earned #8, now #11).
       let secondPlace = null;
+      let currentRank = null;
+      let entryCount = null;
       try {
-        const lbResp = await fetch(`https://www.strava.com/api/v3/segments/${segId}/leaderboard?per_page=2`, { headers });
+        const lbResp = await fetch(`https://www.strava.com/api/v3/segments/${segId}/leaderboard?per_page=10`, { headers });
         if (lbResp.status === 429) { rateLimited = true; }
         else if (lbResp.ok) {
           const lb = await lbResp.json();
-          secondPlace = lb && lb.entries && lb.entries.length > 1 ? lb.entries[1] : null;
+          if (lb && lb.entries) {
+            entryCount = lb.entry_count || null;
+            // Second place is rank 2 in entries
+            secondPlace = lb.entries.find(e => e.rank === 2) || null;
+            // Current user entry: Strava includes it automatically if you've
+            // ridden the segment; it's typically the entry with the highest
+            // rank value (i.e. furthest down the leaderboard) in the response
+            // since it's appended as context beyond the top 10 when needed.
+            // We use athlete_segment_stats from the segment detail as a
+            // cross-check since that's more reliable for our own position.
+            const myEntry = lb.entries.find(e => e.athlete_name && seg && seg.athlete_segment_stats);
+            currentRank = myEntry ? myEntry.rank : null;
+          }
         }
       } catch(e) {}
+
+      // athlete_segment_stats from the segment detail is the most reliable
+      // source for the user's own current rank and PR time.
+      const myStats = seg && seg.athlete_segment_stats ? seg.athlete_segment_stats : null;
+      if (myStats && myStats.pr_rank) currentRank = myStats.pr_rank;
 
       // Age-group leaderboard check - separate call since age-group KOM
       // status isn't part of the achievement data at all, only visible by
@@ -1485,6 +1513,8 @@ async function enrichKomDetails(token, athleteId) {
         kom_time: seg && seg.xoms ? (seg.xoms.kom || seg.xoms.overall) : null,
         second_place_time: secondPlace ? secondPlace.elapsed_time : null,
         second_place_name: secondPlace ? secondPlace.athlete_name : null,
+        current_rank: currentRank,
+        entry_count: entryCount,
         age_group_rank: ageGroupRank,
         age_group_total: ageGroupTotal,
         age_group_label: s.ageGroup
@@ -1493,7 +1523,7 @@ async function enrichKomDetails(token, athleteId) {
     } catch(e) { processed++; } // skip this segment, move on
   }
 
-  setCached(athleteId, 'kom_enriched_details_v2', enriched);
+  setCached(athleteId, 'kom_enriched_details_v3', enriched);
   const remaining = allAchievementSegmentIds.filter(id => !enriched[id]).length;
   return { processed, remaining, rateLimited, enriched, totalKomSegments: allAchievementSegmentIds.length };
 }
@@ -3753,6 +3783,7 @@ function renderGear() {
 
 // ==================== FULL HISTORICAL KOM/CR SCAN UI ====================
 let komScanFilter = 'all';
+let komSortMode = 'date'; // 'date' or 'popularity'
 let komScanRunning = false;
 
 function sportGroupForType(type) {
@@ -3766,6 +3797,14 @@ function filterKomScan(group) {
   komScanFilter = group;
   document.querySelectorAll('[id^=kom-filter-]').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('kom-filter-' + group);
+  if (btn) btn.classList.add('active');
+  renderFullKomList();
+}
+
+function setKomSortMode(mode) {
+  komSortMode = mode;
+  document.querySelectorAll('[id^=kom-sort-]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('kom-sort-' + mode);
   if (btn) btn.classList.add('active');
   renderFullKomList();
 }
@@ -3789,7 +3828,7 @@ async function renderKomScanUI() {
     statusEl.innerHTML = `Scanned ${progress.scannedIds.length} of ${allAchievementRides.length} activities (${pct}%) - found ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s so far. ${remaining} activities remaining.`;
     controlsEl.innerHTML = `<button class="gold-btn" id="kom-scan-btn" onclick="runKomScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
   } else {
-    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v2', 7*24*60*60*1000)) || {};
+    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
     const allAchievementSegments = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
     const enrichedCount = allAchievementSegments.filter(id => enrichedCache[id]).length;
 
@@ -3849,7 +3888,7 @@ async function restartKomScan() {
   if (!confirm('This clears all scan progress and starts over from scratch. Continue?')) return;
   if (!athleteData) return;
   await resetKomScan(athleteData.id);
-  setCached(athleteData.id, 'kom_enriched_details_v2', {});
+  setCached(athleteData.id, 'kom_enriched_details_v3', {});
   await renderKomScanUI();
 }
 
@@ -3859,7 +3898,7 @@ async function renderFullKomList() {
   if (!listEl || !athleteData) return;
 
   const progress = await getScanProgress(athleteData.id);
-  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v2', 7*24*60*60*1000)) || {};
+  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
 
   const koms = progress.koms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
   const top10s = progress.top10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
@@ -3891,10 +3930,24 @@ async function renderFullKomList() {
       const elevFt = detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft' : '';
 
       let rankOfStr = '';
-      if (isKom && detail.athlete_count) {
-        rankOfStr = ' &middot; 1st of ' + detail.athlete_count.toLocaleString() + ' athletes';
-      } else if (!isKom && detail.athlete_count) {
-        rankOfStr = ' &middot; #' + e.rank + ' of ' + detail.athlete_count.toLocaleString() + ' athletes';
+      const histRank = e.rank;
+      const currRank = detail.current_rank;
+      const totalAthletes = detail.athlete_count;
+
+      if (isKom) {
+        // For KOMs: show "1st of N athletes" plus a warning if current rank
+        // has slipped (someone took the KOM since the activity was uploaded)
+        if (totalAthletes) rankOfStr = ' &middot; 1st of ' + totalAthletes.toLocaleString() + ' athletes';
+        if (currRank && currRank > 1) {
+          rankOfStr += ' <span style="color:#f85149">(now #' + currRank + ' — KOM taken)</span>';
+        }
+      } else {
+        // For Top 10s: show historical rank, then current rank if different
+        if (currRank && currRank !== histRank) {
+          rankOfStr = ' &middot; earned #' + histRank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() : '') + ', <span style="color:#7d8590">now #' + currRank + '</span>';
+        } else {
+          rankOfStr = ' &middot; #' + histRank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() + ' athletes' : '');
+        }
       }
 
       let marginStr = '';
@@ -3937,8 +3990,23 @@ async function renderFullKomList() {
     return '<div class="row"><div><div class="row-name"><a href="https://www.strava.com/segments/' + e.segment_id + '" target="_blank" style="color:#e6edf3;text-decoration:none">' + e.segment_name + '</a>' + sportBadge + '</div><div class="row-meta">' + date + ' &middot; ' + t + '</div>' + detailLine + '</div>' + rankBadge + '</div>';
   }
 
-  const sortedKoms = [...koms].sort((a,b) => new Date(b.date) - new Date(a.date));
-  const sortedTop10s = [...top10s].sort((a,b) => new Date(b.date) - new Date(a.date));
+  function sortByMode(list) {
+    if (komSortMode === 'popularity') {
+      // Most competitive first (highest athlete_count = most impressive
+      // KOM/Top10 to hold, since you beat more people). Entries that
+      // haven't been enriched yet (no athlete_count known) sort to the
+      // end rather than being mixed in with an unknown/zero value.
+      return [...list].sort((a, b) => {
+        const aCount = enrichedCache[a.segment_id] ? (enrichedCache[a.segment_id].athlete_count || 0) : -1;
+        const bCount = enrichedCache[b.segment_id] ? (enrichedCache[b.segment_id].athlete_count || 0) : -1;
+        return bCount - aCount;
+      });
+    }
+    return [...list].sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  const sortedKoms = sortByMode(koms);
+  const sortedTop10s = sortByMode(top10s);
 
   let html = '';
   html += '<h3 style="font-size:13px;font-weight:600;color:#7d8590;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px">KOMs / CRs (' + sortedKoms.length + ')</h3>';
