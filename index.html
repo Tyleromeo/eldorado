@@ -1295,13 +1295,9 @@ async function persistAchievementCorrections(corrections) {
 // persisted to Supabase so it survives reloads and can resume after a
 // rate-limit pause. Final results cache for 7 days once a full pass completes.
 
-const SCAN_CHUNK_SIZE = 40; // activities processed per click - keeps each
-                              // chunk safely under the 100/15min Strava limit
-                              // even with normal dashboard usage happening too
-const ENRICH_CHUNK_SIZE = 15; // segments enriched per click - each segment
-                                // costs 3 calls (detail, overall leaderboard,
-                                // age-group leaderboard), so this keeps total
-                                // calls per click (~45) similarly safe
+const SCAN_CHUNK_SIZE = 40; // activities/segments processed per click - keeps
+                              // each chunk safely under the 100/15min Strava
+                              // limit even with normal dashboard usage happening too
 
 async function getScanProgress(athleteId) {
   // Progress doesn't expire on its own; it's only cleared by a fresh restart.
@@ -1454,21 +1450,35 @@ async function scanKomChunk(token, athleteId) {
   return { processed, remaining, rateLimited, progress, totalAchievementRides: allAchievementRides.length };
 }
 
-// After the activity scan is complete, fetch segment detail (distance/
-// elevation) and leaderboard (2nd place time, for margin) for each unique
-// KOM segment. This is a separate, second pass since it's specifically
-// about enriching KOMs with the comparison data the user asked for.
+// After the activity scan is complete, fetch segment detail (distance,
+// elevation, current KOM/CR time, athlete_count) for each segment with an
+// achievement. This is a separate, second pass for the comparison data the
+// user asked for.
+//
+// IMPORTANT LIMITATION: Strava restricted the /segments/{id}/leaderboard
+// endpoint to subscriber-only access some time ago - non-subscriber API
+// apps (including this one) get a 403 on every call, with no way around it
+// via scopes or retries. This means we can't get 2nd-place times, names, or
+// a precise "current rank" number for segments outside the top 10. What
+// IS reliably available from /segments/{id} alone: the segment's current
+// KOM/CR time (xoms.kom), distance, elevation, athlete_count, and (for
+// segments you've ridden) your own PR via athlete_segment_stats - no
+// separate leaderboard call needed or attempted.
+//
+// We use this to derive whether a KOM is still held: if your stored
+// effort time still matches the segment's current KOM time, you very
+// likely still hold it; if the current KOM time is faster than your
+// stored time, someone has beaten you and taken it. This can't give an
+// exact rank like "#11," but it correctly answers "do I still hold this."
 async function enrichKomDetails(token, athleteId) {
   const headers = { Authorization: `Bearer ${token}` };
   const progress = await getScanProgress(athleteId);
-  const enriched = (await getCached(athleteId, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
-  const s = getSettings();
+  const enriched = (await getCached(athleteId, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
 
   // Enrich every segment with ANY achievement (KOM or Top 10), not just
-  // outright KOMs - an age-group KOM can exist on a segment where you're
-  // only 2nd-10th overall, so it would otherwise be missed entirely.
+  // outright KOMs.
   const allAchievementSegmentIds = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
-  const toEnrich = allAchievementSegmentIds.filter(id => !enriched[id]).slice(0, ENRICH_CHUNK_SIZE);
+  const toEnrich = allAchievementSegmentIds.filter(id => !enriched[id]).slice(0, SCAN_CHUNK_SIZE); // back to the larger chunk size now that it's 1 call/segment, not 3
 
   if (!toEnrich.length) {
     return { processed: 0, remaining: 0, rateLimited: false, enriched, totalKomSegments: allAchievementSegmentIds.length };
@@ -1479,65 +1489,11 @@ async function enrichKomDetails(token, athleteId) {
 
   for (const segId of toEnrich) {
     try {
-      // Segment detail is the reliable source: distance, elevation, KOM/QOM
-      // time (xoms), total athlete_count, and the user's own stats.
       const segResp = await fetch(`https://www.strava.com/api/v3/segments/${segId}`, { headers });
       if (segResp.status === 429) { rateLimited = true; break; }
       const seg = segResp.ok ? await segResp.json() : null;
-
-      // Overall leaderboard - Strava restricted this a while back, so other
-      // athletes' names/times may come back empty or stripped. We still try,
-      // but never assume it'll have usable entries. Importantly, Strava
-      // automatically includes the authenticated user's own entry (with their
-      // current rank) in the response even if it's outside the top 10 -
-      // this is how we get the "current rank" that may differ from the
-      // historical rank stored in the achievement (e.g. earned #8, now #11).
-      let secondPlace = null;
-      let currentRank = null;
-      let entryCount = null;
-      try {
-        const lbResp = await fetch(`https://www.strava.com/api/v3/segments/${segId}/leaderboard?per_page=10`, { headers });
-        if (lbResp.status === 429) { rateLimited = true; }
-        else if (lbResp.ok) {
-          const lb = await lbResp.json();
-          if (lb && lb.entries) {
-            entryCount = lb.entry_count || null;
-            // Second place is rank 2 in entries
-            secondPlace = lb.entries.find(e => e.rank === 2) || null;
-            // Current user entry: Strava includes it automatically if you've
-            // ridden the segment; it's typically the entry with the highest
-            // rank value (i.e. furthest down the leaderboard) in the response
-            // since it's appended as context beyond the top 10 when needed.
-            // We use athlete_segment_stats from the segment detail as a
-            // cross-check since that's more reliable for our own position.
-            const myEntry = lb.entries.find(e => e.athlete_name && seg && seg.athlete_segment_stats);
-            currentRank = myEntry ? myEntry.rank : null;
-          }
-        }
-      } catch(e) {}
-
-      // athlete_segment_stats from the segment detail is the most reliable
-      // source for the user's own current rank and PR time.
       const myStats = seg && seg.athlete_segment_stats ? seg.athlete_segment_stats : null;
-      if (myStats && myStats.pr_rank) currentRank = myStats.pr_rank;
-
-      // Age-group leaderboard check - separate call since age-group KOM
-      // status isn't part of the achievement data at all, only visible by
-      // filtering the leaderboard to the user's age group and checking rank.
-      let ageGroupRank = null, ageGroupTotal = null;
-      if (!rateLimited) {
-        try {
-          const agResp = await fetch(`https://www.strava.com/api/v3/segments/${segId}/leaderboard?age_group=${s.ageGroup}&per_page=1`, { headers });
-          if (agResp.status === 429) { rateLimited = true; }
-          else if (agResp.ok) {
-            const ag = await agResp.json();
-            if (ag && ag.entries && ag.entries.length) {
-              ageGroupRank = ag.entries[0].rank;
-              ageGroupTotal = ag.entry_count || null;
-            }
-          }
-        } catch(e) {}
-      }
+      const komTime = seg && seg.xoms ? (seg.xoms.kom || seg.xoms.overall) : null;
 
       enriched[segId] = {
         distance: seg ? seg.distance : null,
@@ -1545,20 +1501,15 @@ async function enrichKomDetails(token, athleteId) {
         average_grade: seg ? seg.average_grade : null,
         athlete_count: seg ? seg.athlete_count : null,
         effort_count: seg ? seg.effort_count : null,
-        kom_time: seg && seg.xoms ? (seg.xoms.kom || seg.xoms.overall) : null,
-        second_place_time: secondPlace ? secondPlace.elapsed_time : null,
-        second_place_name: secondPlace ? secondPlace.athlete_name : null,
-        current_rank: currentRank,
-        entry_count: entryCount,
-        age_group_rank: ageGroupRank,
-        age_group_total: ageGroupTotal,
-        age_group_label: s.ageGroup
+        kom_time: komTime,
+        my_pr_time: myStats ? myStats.pr_elapsed_time : null,
+        my_effort_count: myStats ? myStats.effort_count : null
       };
       processed++;
     } catch(e) { processed++; } // skip this segment, move on
   }
 
-  setCached(athleteId, 'kom_enriched_details_v3', enriched);
+  setCached(athleteId, 'kom_enriched_details_v4', enriched);
   const remaining = allAchievementSegmentIds.filter(id => !enriched[id]).length;
   return { processed, remaining, rateLimited, enriched, totalKomSegments: allAchievementSegmentIds.length };
 }
@@ -3863,15 +3814,15 @@ async function renderKomScanUI() {
     statusEl.innerHTML = `Scanned ${progress.scannedIds.length} of ${allAchievementRides.length} activities (${pct}%) - found ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s so far. ${remaining} activities remaining.`;
     controlsEl.innerHTML = `<button class="gold-btn" id="kom-scan-btn" onclick="runKomScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
   } else {
-    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
+    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
     const allAchievementSegments = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
     const enrichedCount = allAchievementSegments.filter(id => enrichedCache[id]).length;
 
     if (enrichedCount < allAchievementSegments.length) {
-      statusEl.innerHTML = `Activity scan complete: ${progress.koms.length} KOMs, ${progress.top10s.length} Top 10s found. Fetching segment details, age-group rank, and comparison data (3 calls per segment): ${enrichedCount} of ${allAchievementSegments.length} segments enriched.`;
-      controlsEl.innerHTML = `<button class="gold-btn" id="kom-enrich-btn" onclick="runKomEnrichChunk()">Enrich next ${Math.min(ENRICH_CHUNK_SIZE, allAchievementSegments.length - enrichedCount)}</button>`;
+      statusEl.innerHTML = `Activity scan complete: ${progress.koms.length} KOMs, ${progress.top10s.length} Top 10s found. Fetching segment details and current KOM times: ${enrichedCount} of ${allAchievementSegments.length} segments enriched. (Note: Strava restricts exact leaderboard rank/2nd-place data to subscriber API access, so we detect lost KOMs by comparing your time to the segment's current best, without an exact "now ranked #X.")`;
+      controlsEl.innerHTML = `<button class="gold-btn" id="kom-enrich-btn" onclick="runKomEnrichChunk()">Enrich next ${Math.min(SCAN_CHUNK_SIZE, allAchievementSegments.length - enrichedCount)}</button>`;
     } else {
-      statusEl.innerHTML = `Full scan complete: ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s found across your entire history, with full segment, age-group, and comparison details.`;
+      statusEl.innerHTML = `Full scan complete: ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s found across your entire history, with segment details and current-KOM-time comparison.`;
       controlsEl.innerHTML = `<button onclick="restartKomScan()" style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:8px 14px;color:#7d8590;cursor:pointer;font-size:13px">Rescan (refresh data)</button>`;
     }
   }
@@ -3923,7 +3874,7 @@ async function restartKomScan() {
   if (!confirm('This clears all scan progress and starts over from scratch. Continue?')) return;
   if (!athleteData) return;
   await resetKomScan(athleteData.id);
-  setCached(athleteData.id, 'kom_enriched_details_v3', {});
+  setCached(athleteData.id, 'kom_enriched_details_v4', {});
   await renderKomScanUI();
 }
 
@@ -3933,7 +3884,7 @@ async function renderFullKomList() {
   if (!listEl || !athleteData) return;
 
   const progress = await getScanProgress(athleteData.id);
-  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v3', 7*24*60*60*1000)) || {};
+  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
 
   const koms = progress.koms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
   const top10s = progress.top10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
@@ -3966,66 +3917,41 @@ async function renderFullKomList() {
     const detail = enrichedCache[e.segment_id];
 
     let detailLine = '';
+    let stillHeldKom = true; // default true (assume held) until proven otherwise by a faster current KOM time
     if (detail) {
       const distMi = detail.distance ? (detail.distance/1609.34).toFixed(1) + ' mi' : '';
       const elevFt = detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft' : '';
-
-      let rankOfStr = '';
-      const histRank = e.rank;
-      const currRank = detail.current_rank;
       const totalAthletes = detail.athlete_count;
 
+      let rankOfStr = '';
       if (isKom) {
-        // For KOMs: show "1st of N athletes" plus a warning if current rank
-        // has slipped (someone took the KOM since the activity was uploaded)
-        if (totalAthletes) rankOfStr = ' &middot; 1st of ' + totalAthletes.toLocaleString() + ' athletes';
-        if (currRank && currRank > 1) {
-          rankOfStr += ' <span style="color:#f85149">(now #' + currRank + ' — KOM taken)</span>';
+        // Strava's leaderboard endpoint is subscriber-only via the API, so we
+        // can't get an exact current rank. What we CAN tell: if the segment's
+        // current KOM time is now faster than your stored time, someone has
+        // beaten you - the crown has been taken, even though we don't know
+        // your exact new position.
+        if (totalAthletes) rankOfStr = ' &middot; 1st of ' + totalAthletes.toLocaleString() + ' athletes (at time of ride)';
+        if (detail.kom_time && detail.kom_time < e.elapsed) {
+          stillHeldKom = false;
+          rankOfStr += ' <span style="color:#f85149">(KOM since taken - current best is ' + Math.floor(detail.kom_time/60) + 'm ' + (detail.kom_time%60) + 's)</span>';
         }
       } else {
-        // For Top 10s: show historical rank, then current rank if different
-        if (currRank && currRank !== histRank) {
-          rankOfStr = ' &middot; earned #' + histRank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() : '') + ', <span style="color:#7d8590">now #' + currRank + '</span>';
-        } else {
-          rankOfStr = ' &middot; #' + histRank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() + ' athletes' : '');
-        }
+        rankOfStr = ' &middot; #' + e.rank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() + ' athletes (at time of ride)' : '');
       }
 
-      let marginStr = '';
-      if (isKom && detail.second_place_time) {
-        const marginSecs = detail.second_place_time - e.elapsed;
-        if (marginSecs > 0) {
-          const mm = Math.floor(marginSecs/60), ss = marginSecs%60;
-          marginStr = ' &middot; +' + (mm > 0 ? mm+'m '+ss+'s' : ss+'s') + ' ahead of 2nd' + (detail.second_place_name ? ' ('+detail.second_place_name+')' : '');
-        }
-      }
-
-      let ageGroupStr = '';
-      if (detail.age_group_rank === 1) {
-        ageGroupStr = ' &middot; 1st in ' + (detail.age_group_label || 'age group').replace('_','-') + (detail.age_group_total ? ' of ' + detail.age_group_total : '');
-      } else if (detail.age_group_rank) {
-        ageGroupStr = ' &middot; #' + detail.age_group_rank + ' in ' + (detail.age_group_label || 'age group').replace('_','-') + (detail.age_group_total ? ' of ' + detail.age_group_total : '');
-      }
-
-      detailLine = '<div class="row-meta" style="margin-top:2px">' + [distMi, elevFt].filter(Boolean).join(' &middot; ') + rankOfStr + marginStr + ageGroupStr + '</div>';
+      detailLine = '<div class="row-meta" style="margin-top:2px">' + [distMi, elevFt].filter(Boolean).join(' &middot; ') + rankOfStr + '</div>';
     }
 
     const sportBadge = sportGroupForType(e.activity_type) === 'run' ? ' <span class="badge b-run">RUN</span>'
       : sportGroupForType(e.activity_type) === 'hike' ? ' <span class="badge" style="background:#21262d;color:#7d8590">HIKE</span>' : '';
 
-    // Outright KOM = rank 1 overall. We also flag if it's ADDITIONALLY an
-    // age-group #1 (common - winning overall usually means winning your age
-    // group too), using the more reliable leaderboard-based age_group_rank
-    // rather than the achievement's own category field.
     let rankBadge;
     if (isKom) {
-      const alsoAgeGroupKom = detail && detail.age_group_rank === 1;
-      rankBadge = '<span class="badge b-gold">KOM' + (alsoAgeGroupKom ? ' + Age Group' : '') + '</span>';
+      rankBadge = stillHeldKom
+        ? '<span class="badge b-gold">KOM</span>'
+        : '<span class="badge" style="background:#2d1a1a;color:#f85149;border:1px solid #f85149">KOM (lost)</span>';
     } else {
-      const isAgeGroupKom = detail && detail.age_group_rank === 1;
-      rankBadge = isAgeGroupKom
-        ? '<span class="badge" style="background:#2d2410;color:#C9A227;border:1px solid #C9A227">Age Group KOM</span>'
-        : '<span class="badge b-blue">#' + e.rank + '</span>';
+      rankBadge = '<span class="badge b-blue">#' + e.rank + '</span>';
     }
 
     return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #21262d"><div style="flex-shrink:0;padding-top:1px">' + rankBadge + '</div><div><div class="row-name"><a href="https://www.strava.com/segments/' + e.segment_id + '" target="_blank" style="color:#e6edf3;text-decoration:none">' + e.segment_name + '</a>' + sportBadge + '</div><div class="row-meta">' + date + ' &middot; ' + t + '</div>' + detailLine + '</div></div>';
