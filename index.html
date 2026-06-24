@@ -3915,23 +3915,49 @@ async function renderFullKomList() {
   const progress = await getScanProgress(athleteData.id);
   const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v5', 7*24*60*60*1000)) || {};
 
-  const koms = progress.koms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
-  const top10s = progress.top10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
+  // Determine which KOMs are still actually held vs lost, using enrichment
+  // data (comparing the stored effort time against the segment's current
+  // best). A KOM only counts as "lost" once we've actually enriched that
+  // segment and confirmed a faster current time exists - segments not yet
+  // enriched are left as KOMs (we simply don't know yet) rather than
+  // guessed at, so counts don't flicker as enrichment progresses.
+  const allKoms = progress.koms.map(k => {
+    const detail = enrichedCache[k.segment_id];
+    const lost = !!(detail && detail.kom_time && detail.kom_time < k.elapsed);
+    return { ...k, lost };
+  });
+  const stillHeldKoms = allKoms.filter(k => !k.lost);
+  const lostKoms = allKoms.filter(k => k.lost).map(k => ({ ...k, formerKom: true }));
+
+  // Former KOMs get folded into the Top 10 list with a "(Former KOM)" tag,
+  // even though we don't know their exact current rank (Strava restricts
+  // exact leaderboard rank to subscriber API access) - this matches what
+  // was asked for: remove it from the KOM count, keep it visible as a
+  // past achievement rather than disappearing entirely.
+  const allTop10s = [...progress.top10s, ...lostKoms];
+
+  const koms = stillHeldKoms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
+  const top10s = allTop10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
 
   if (totalsEl) {
-    const bikeKoms = progress.koms.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
-    const runKoms = progress.koms.filter(k => sportGroupForType(k.activity_type) === 'run').length;
-    const hikeKoms = progress.koms.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
-    const bikeTop10s = progress.top10s.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
-    const runTop10s = progress.top10s.filter(k => sportGroupForType(k.activity_type) === 'run').length;
-    const hikeTop10s = progress.top10s.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
+    const bikeKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
+    const runKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'run').length;
+    const hikeKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
+    const bikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
+    const runTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'run').length;
+    const hikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
+    const enrichedCount = [...new Set([...progress.koms, ...progress.top10s].map(k=>k.segment_id))].filter(id => enrichedCache[id]).length;
+    const totalSegments = new Set([...progress.koms, ...progress.top10s].map(k=>k.segment_id)).size;
     totalsEl.innerHTML =
-      '<div class="metric"><div class="metric-label">Bike KOMs</div><div class="metric-val" style="color:#C9A227">' + bikeKoms + '</div><div class="metric-sub">all-time</div></div>' +
-      '<div class="metric"><div class="metric-label">Run KOMs</div><div class="metric-val" style="color:#C9A227">' + runKoms + '</div><div class="metric-sub">all-time</div></div>' +
-      '<div class="metric"><div class="metric-label">Hike KOMs</div><div class="metric-val" style="color:#C9A227">' + hikeKoms + '</div><div class="metric-sub">all-time</div></div>' +
-      '<div class="metric"><div class="metric-label">Bike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + bikeTop10s + '</div><div class="metric-sub">all-time</div></div>' +
-      '<div class="metric"><div class="metric-label">Run Top 10s</div><div class="metric-val" style="color:#58a6ff">' + runTop10s + '</div><div class="metric-sub">all-time</div></div>' +
-      '<div class="metric"><div class="metric-label">Hike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + hikeTop10s + '</div><div class="metric-sub">all-time</div></div>';
+      '<div class="metric"><div class="metric-label">Bike KOMs</div><div class="metric-val" style="color:#C9A227">' + bikeKoms + '</div><div class="metric-sub">currently held</div></div>' +
+      '<div class="metric"><div class="metric-label">Run KOMs</div><div class="metric-val" style="color:#C9A227">' + runKoms + '</div><div class="metric-sub">currently held</div></div>' +
+      '<div class="metric"><div class="metric-label">Hike KOMs</div><div class="metric-val" style="color:#C9A227">' + hikeKoms + '</div><div class="metric-sub">currently held</div></div>' +
+      '<div class="metric"><div class="metric-label">Bike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + bikeTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>' +
+      '<div class="metric"><div class="metric-label">Run Top 10s</div><div class="metric-val" style="color:#58a6ff">' + runTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>' +
+      '<div class="metric"><div class="metric-label">Hike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + hikeTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>';
+    if (enrichedCount < totalSegments) {
+      totalsEl.innerHTML += '<div style="grid-column:1/-1;font-size:12px;color:#7d8590;margin-top:4px">KOM counts above only reflect the ' + enrichedCount + ' of ' + totalSegments + ' segments enriched so far - finish enriching for fully accurate totals.</div>';
+    }
   }
 
   if (!koms.length && !top10s.length) {
@@ -3946,7 +3972,6 @@ async function renderFullKomList() {
     const detail = enrichedCache[e.segment_id];
 
     let detailLine = '';
-    let stillHeldKom = true; // default true (assume held) until proven otherwise by a faster current KOM time
     if (detail) {
       const distMi = detail.distance ? (detail.distance/1609.34).toFixed(1) + ' mi' : '';
       const elevFt = detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft' : '';
@@ -3954,16 +3979,13 @@ async function renderFullKomList() {
 
       let rankOfStr = '';
       if (isKom) {
-        // Strava's leaderboard endpoint is subscriber-only via the API, so we
-        // can't get an exact current rank. What we CAN tell: if the segment's
-        // current KOM time is now faster than your stored time, someone has
-        // beaten you - the crown has been taken, even though we don't know
-        // your exact new position.
+        // Still-held KOM (lost ones were already filtered out before reaching here)
         if (totalAthletes) rankOfStr = ' &middot; 1st of ' + totalAthletes.toLocaleString() + ' athletes (at time of ride)';
-        if (detail.kom_time && detail.kom_time < e.elapsed) {
-          stillHeldKom = false;
-          rankOfStr += ' <span style="color:#f85149">(KOM since taken - current best is ' + Math.floor(detail.kom_time/60) + 'm ' + (detail.kom_time%60) + 's)</span>';
-        }
+      } else if (e.formerKom) {
+        // Strava restricts exact current rank via API for non-subscriber
+        // access, so we can confirm it's no longer #1, but not the exact
+        // new position.
+        rankOfStr = ' &middot; held KOM at time of ride' + (totalAthletes ? ' (' + totalAthletes.toLocaleString() + ' athletes)' : '') + ' <span style="color:#f85149">- current best is ' + Math.floor(detail.kom_time/60) + 'm ' + (detail.kom_time%60) + 's</span>';
       } else {
         rankOfStr = ' &middot; #' + e.rank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() + ' athletes (at time of ride)' : '');
       }
@@ -3976,9 +3998,12 @@ async function renderFullKomList() {
 
     let rankBadge;
     if (isKom) {
-      rankBadge = stillHeldKom
-        ? '<span class="badge b-gold">KOM</span>'
-        : '<span class="badge" style="background:#2d1a1a;color:#f85149;border:1px solid #f85149">KOM (lost)</span>';
+      rankBadge = '<span class="badge b-gold">KOM</span>';
+    } else if (e.formerKom) {
+      // This was a KOM (rank 1) that's since been beaten - we know it's no
+      // longer #1, but Strava restricts the exact current rank via API, so
+      // we show it as a former KOM rather than guessing a specific position.
+      rankBadge = '<span class="badge" style="background:#2d1a1a;color:#f85149;border:1px solid #f85149">Former KOM</span>';
     } else {
       rankBadge = '<span class="badge b-blue">#' + e.rank + '</span>';
     }
