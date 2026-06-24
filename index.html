@@ -1295,6 +1295,18 @@ async function persistAchievementCorrections(corrections) {
 // persisted to Supabase so it survives reloads and can resume after a
 // rate-limit pause. Final results cache for 7 days once a full pass completes.
 
+// Parses Strava's formatted time strings (e.g. "3:15" for 3m15s, or
+// "1:02:47" for 1h2m47s) into raw seconds, so they can be compared against
+// elapsed_time values elsewhere in the app, which are always raw seconds.
+function parseTimeStringToSeconds(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const parts = timeStr.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1]; // M:SS
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]; // H:MM:SS
+  return null;
+}
+
 const SCAN_CHUNK_SIZE = 40; // activities/segments processed per click - keeps
                               // each chunk safely under the 100/15min Strava
                               // limit even with normal dashboard usage happening too
@@ -1473,7 +1485,7 @@ async function scanKomChunk(token, athleteId) {
 async function enrichKomDetails(token, athleteId) {
   const headers = { Authorization: `Bearer ${token}` };
   const progress = await getScanProgress(athleteId);
-  const enriched = (await getCached(athleteId, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
+  const enriched = (await getCached(athleteId, 'kom_enriched_details_v5', 7*24*60*60*1000)) || {};
 
   // Enrich every segment with ANY achievement (KOM or Top 10), not just
   // outright KOMs.
@@ -1493,7 +1505,14 @@ async function enrichKomDetails(token, athleteId) {
       if (segResp.status === 429) { rateLimited = true; break; }
       const seg = segResp.ok ? await segResp.json() : null;
       const myStats = seg && seg.athlete_segment_stats ? seg.athlete_segment_stats : null;
-      const komTime = seg && seg.xoms ? (seg.xoms.kom || seg.xoms.overall) : null;
+
+      // xoms.kom comes back as a formatted string like "3:15" or "1:02:47"
+      // (M:SS or H:MM:SS), NOT a number of seconds - parsing it is required
+      // before it can be compared against elapsed times (which ARE raw
+      // seconds). Comparing the raw string against a number silently never
+      // matched, which is why lost KOMs were never being detected.
+      const komTimeStr = seg && seg.xoms ? (seg.xoms.kom || seg.xoms.overall) : null;
+      const komTime = parseTimeStringToSeconds(komTimeStr);
 
       enriched[segId] = {
         distance: seg ? seg.distance : null,
@@ -1509,7 +1528,7 @@ async function enrichKomDetails(token, athleteId) {
     } catch(e) { processed++; } // skip this segment, move on
   }
 
-  setCached(athleteId, 'kom_enriched_details_v4', enriched);
+  setCached(athleteId, 'kom_enriched_details_v5', enriched);
   const remaining = allAchievementSegmentIds.filter(id => !enriched[id]).length;
   return { processed, remaining, rateLimited, enriched, totalKomSegments: allAchievementSegmentIds.length };
 }
@@ -3814,7 +3833,7 @@ async function renderKomScanUI() {
     statusEl.innerHTML = `Scanned ${progress.scannedIds.length} of ${allAchievementRides.length} activities (${pct}%) - found ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s so far. ${remaining} activities remaining.`;
     controlsEl.innerHTML = `<button class="gold-btn" id="kom-scan-btn" onclick="runKomScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
   } else {
-    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
+    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v5', 7*24*60*60*1000)) || {};
     const allAchievementSegments = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
     const enrichedCount = allAchievementSegments.filter(id => enrichedCache[id]).length;
 
@@ -3874,7 +3893,7 @@ async function restartKomScan() {
   if (!confirm('This clears all scan progress and starts over from scratch. Continue?')) return;
   if (!athleteData) return;
   await resetKomScan(athleteData.id);
-  setCached(athleteData.id, 'kom_enriched_details_v4', {});
+  setCached(athleteData.id, 'kom_enriched_details_v5', {});
   await renderKomScanUI();
 }
 
@@ -3884,7 +3903,7 @@ async function renderFullKomList() {
   if (!listEl || !athleteData) return;
 
   const progress = await getScanProgress(athleteData.id);
-  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v4', 7*24*60*60*1000)) || {};
+  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v5', 7*24*60*60*1000)) || {};
 
   const koms = progress.koms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
   const top10s = progress.top10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
