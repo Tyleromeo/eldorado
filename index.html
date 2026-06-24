@@ -1367,33 +1367,36 @@ async function getScanProgress(athleteId) {
   // separate entry. Dedupe down to one entry per segment_id, keeping the
   // most recent (since that reflects your current best time there). Same
   // logic applies to Top 10s - placing top-10 on a segment more than once
-  // shouldn't count as two separate Top 10 achievements.
-  // Third self-heal pass: a segment you already hold the KOM on will earn a
-  // FRESH "rank 1 overall" achievement every time you post a new best time
-  // on it again later - same segment, same KOM, but counted as a second
-  // separate entry. Dedupe down to one entry per segment_id, keeping the
-  // most recent (since that reflects your current best time there). This
-  // also handles the case where a segment's status changed over time (e.g.
-  // you held the KOM, lost it, then placed top-5 on a later effort, or vice
-  // versa) - merge both lists first, find the most recent entry PER
-  // SEGMENT regardless of which list it came from, then re-split based on
-  // that entry's actual rank, rather than deduping each list independently
-  // and risking the same segment appearing in both.
-  if (!progress.dedupedV3 && (progress.koms.length || progress.top10s.length)) {
+  // Always-on dedup pass (not a one-time flag): a segment you already hold
+  // the KOM on will earn a FRESH "rank 1 overall" achievement every time you
+  // post a new best time on it again later - same segment, same KOM, but
+  // captured as a second separate entry by the scanner. This needs to run
+  // on every read, not just once, since new scan chunks can keep adding
+  // entries for segments already deduped in a prior pass.
+  //
+  // Critically, dedup keeps the FASTEST elapsed time per segment (your true
+  // personal best), NOT simply the most recently dated entry - an older
+  // achievement can still be your fastest effort if a more recent ride on
+  // the same segment was slower. Using "most recent" caused real bugs: an
+  // old, already-superseded effort was being compared against the live KOM
+  // time and incorrectly flagged "lost," even though a separate, faster,
+  // still-standing entry for the same segment existed elsewhere in the list.
+  if (progress.koms.length || progress.top10s.length) {
     const merged = [...progress.koms, ...progress.top10s];
     const bySegment = {};
     merged.forEach(e => {
       const existing = bySegment[e.segment_id];
-      if (!existing || new Date(e.date) > new Date(existing.date)) bySegment[e.segment_id] = e;
+      if (!existing || e.elapsed < existing.elapsed) bySegment[e.segment_id] = e;
     });
     const deduped = Object.values(bySegment);
-    progress = {
-      ...progress,
-      koms: deduped.filter(e => e.rank === 1),
-      top10s: deduped.filter(e => e.rank >= 2 && e.rank <= 10),
-      dedupedV3: true
-    };
-    saveScanProgress(athleteId, progress);
+    const newKoms = deduped.filter(e => e.rank === 1);
+    const newTop10s = deduped.filter(e => e.rank >= 2 && e.rank <= 10);
+    // Only write back (and only if changed) to avoid unnecessary Supabase
+    // writes on every single read when nothing actually needed deduping.
+    if (newKoms.length !== progress.koms.length || newTop10s.length !== progress.top10s.length) {
+      progress = { ...progress, koms: newKoms, top10s: newTop10s };
+      saveScanProgress(athleteId, progress);
+    }
   }
   return progress;
 }
