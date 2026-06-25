@@ -795,7 +795,13 @@ async function getCached(athleteId, key, maxAgeMs) {
 }
 
 function setCached(athleteId, key, payload) {
-  (async () => {
+  // Returns the write promise so callers that need to guarantee the write
+  // has landed before continuing (e.g. restartKomScan resetting progress,
+  // then immediately re-rendering the UI from that same data) can await it.
+  // Most callers still don't await this (fire-and-forget is fine for most
+  // background cache writes), but it's important this CAN be awaited when
+  // needed rather than always resolving instantly regardless of write status.
+  return (async () => {
     try {
       const resp = await fetch(SB_REST + '/api_cache?on_conflict=athlete_id,cache_key', {
         method: 'POST', headers: SB_HEADERS,
@@ -1412,11 +1418,11 @@ async function getScanProgress(athleteId) {
 }
 
 function saveScanProgress(athleteId, progress) {
-  setCached(athleteId, 'kom_scan_progress', progress);
+  return setCached(athleteId, 'kom_scan_progress', progress);
 }
 
 async function resetKomScan(athleteId) {
-  saveScanProgress(athleteId, { scannedIds: [], koms: [], top10s: [], complete: false });
+  await saveScanProgress(athleteId, { scannedIds: [], koms: [], top10s: [], complete: false });
 }
 
 // Processes one chunk of not-yet-scanned achievement-bearing activities.
@@ -3926,7 +3932,7 @@ async function restartKomScan() {
   if (!confirm('This clears all scan progress and starts over from scratch. Continue?')) return;
   if (!athleteData) return;
   await resetKomScan(athleteData.id);
-  setCached(athleteData.id, 'kom_enriched_details_v5', {});
+  await setCached(athleteData.id, 'kom_enriched_details_v5', {});
   await renderKomScanUI();
 }
 
