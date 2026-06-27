@@ -3911,11 +3911,18 @@ async function renderKomScanUI() {
     controlsEl.innerHTML = `<button class="gold-btn" id="kom-scan-btn" onclick="runKomScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
   } else {
     const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v6', 7*24*60*60*1000)) || {};
-    const allAchievementSegments = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
+    // Must match the full segment set enrichKomDetails actually processes -
+    // achievement segments PLUS every segment ever encountered via
+    // allSegmentBests (needed for passive-KOM detection). Using only the
+    // achievement-based subset here was a real bug: it made enrichment look
+    // complete at ~339 segments when there were actually 3000+ to check,
+    // so passive KOMs were never being reached.
+    const achievementSegmentIds = [...new Set([...progress.koms, ...progress.top10s].map(k => k.segment_id))];
+    const allAchievementSegments = [...new Set([...achievementSegmentIds, ...Object.keys(progress.allSegmentBests || {})])];
     const enrichedCount = allAchievementSegments.filter(id => enrichedCache[id]).length;
 
     if (enrichedCount < allAchievementSegments.length) {
-      statusEl.innerHTML = `Activity scan complete: ${progress.koms.length} KOMs, ${progress.top10s.length} Top 10s found. Fetching segment details and current KOM times: ${enrichedCount} of ${allAchievementSegments.length} segments enriched. (Note: Strava restricts exact leaderboard rank/2nd-place data to subscriber API access, so we detect lost KOMs by comparing your time to the segment's current best, without an exact "now ranked #X.")`;
+      statusEl.innerHTML = `Activity scan complete: ${progress.koms.length} KOMs, ${progress.top10s.length} Top 10s found. Fetching segment details and current KOM times across all ${allAchievementSegments.length} segments you've ever had an effort on (this also lets us catch "passive" KOMs Strava never stamped an achievement on): ${enrichedCount} of ${allAchievementSegments.length} segments enriched. (Note: Strava restricts exact leaderboard rank/2nd-place data to subscriber API access, so we detect lost KOMs by comparing your time to the segment's current best, without an exact "now ranked #X.")`;
       controlsEl.innerHTML = `<button class="gold-btn" id="kom-enrich-btn" onclick="runKomEnrichChunk()">Enrich next ${Math.min(SCAN_CHUNK_SIZE, allAchievementSegments.length - enrichedCount)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
     } else {
       statusEl.innerHTML = `Full scan complete: ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s found across your entire history, with segment details and current-KOM-time comparison.`;
