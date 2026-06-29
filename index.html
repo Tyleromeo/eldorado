@@ -4034,8 +4034,8 @@ async function renderFullKomList() {
     const bikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
     const runTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'run').length;
     const hikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
-    const enrichedCount = [...new Set([...progress.koms, ...progress.top10s].map(k=>k.segment_id))].filter(id => enrichedCache[id]).length;
-    const totalSegments = new Set([...progress.koms, ...progress.top10s].map(k=>k.segment_id)).size;
+    const enrichedCount = [...new Set([...achievementSegmentIds, ...Object.keys(progress.allSegmentBests || {})])].filter(id => enrichedCache[id]).length;
+    const totalSegments = new Set([...achievementSegmentIds, ...Object.keys(progress.allSegmentBests || {})]).size;
     totalsEl.innerHTML =
       '<div class="metric"><div class="metric-label">Bike KOMs</div><div class="metric-val" style="color:#C9A227">' + bikeKoms + '</div><div class="metric-sub">currently held</div></div>' +
       '<div class="metric"><div class="metric-label">Run KOMs</div><div class="metric-val" style="color:#C9A227">' + runKoms + '</div><div class="metric-sub">currently held</div></div>' +
