@@ -1323,12 +1323,27 @@ async function persistAchievementCorrections(corrections) {
 // persisted to Supabase so it survives reloads and can resume after a
 // rate-limit pause. Final results cache for 7 days once a full pass completes.
 
-// Parses Strava's formatted time strings (e.g. "3:15" for 3m15s, or
-// "1:02:47" for 1h2m47s) into raw seconds, so they can be compared against
-// elapsed_time values elsewhere in the app, which are always raw seconds.
+// Parses Strava's formatted time strings into raw seconds, so they can be
+// compared against elapsed_time values elsewhere in the app, which are
+// always raw seconds. Strava uses different formats depending on duration:
+//   "48s"      - sub-minute efforts (no colon at all)
+//   "3:15"     - M:SS
+//   "1:02:47"  - H:MM:SS
+// The sub-minute "Ns" format was originally missed entirely, causing the
+// parser to silently return null for any segment whose current KOM time is
+// under a minute - which meant lost-KOM detection could never fire on
+// short, fast segments (confirmed directly via "super fun hill to the
+// superfund", a real lost KOM with a 48s current best that kept showing as
+// still-held because kom_time was null, so the "kom_time < elapsed"
+// comparison could never be true).
 function parseTimeStringToSeconds(timeStr) {
   if (!timeStr || typeof timeStr !== 'string') return null;
-  const parts = timeStr.split(':').map(Number);
+  const trimmed = timeStr.trim();
+  // Sub-minute format: just digits followed by "s", e.g. "48s"
+  const secondsOnlyMatch = trimmed.match(/^(\d+)s$/);
+  if (secondsOnlyMatch) return parseInt(secondsOnlyMatch[1], 10);
+
+  const parts = trimmed.split(':').map(Number);
   if (parts.some(isNaN)) return null;
   if (parts.length === 2) return parts[0] * 60 + parts[1]; // M:SS
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]; // H:MM:SS
@@ -1548,7 +1563,7 @@ async function scanKomChunk(token, athleteId) {
 async function enrichKomDetails(token, athleteId) {
   const headers = { Authorization: `Bearer ${token}` };
   const progress = await getScanProgress(athleteId);
-  const enriched = (await getCached(athleteId, 'kom_enriched_details_v6', 7*24*60*60*1000)) || {};
+  const enriched = (await getCached(athleteId, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
 
   // Enrich every segment we've ever had an effort on - not just ones with
   // an achievement attached. Strava only stamps achievements onto an effort
@@ -1603,7 +1618,7 @@ async function enrichKomDetails(token, athleteId) {
     } catch(e) { processed++; } // skip this segment, move on
   }
 
-  setCached(athleteId, 'kom_enriched_details_v6', enriched);
+  setCached(athleteId, 'kom_enriched_details_v7', enriched);
   const remaining = allSegmentIds.filter(id => !enriched[id]).length;
   return { processed, remaining, rateLimited, enriched, totalKomSegments: allSegmentIds.length };
 }
@@ -3910,7 +3925,7 @@ async function renderKomScanUI() {
     statusEl.innerHTML = `Scanned ${progress.scannedIds.length} of ${allActivitiesToScan.length} activities (${pct}%) - found ${progress.koms.length} KOMs and ${progress.top10s.length} Top 10s so far. ${remaining} activities remaining.`;
     controlsEl.innerHTML = `<button class="gold-btn" id="kom-scan-btn" onclick="runKomScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button> <button onclick="restartKomScan()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:8px 14px;color:#f85149;cursor:pointer;font-size:13px;margin-left:8px">Restart scan</button>`;
   } else {
-    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v6', 7*24*60*60*1000)) || {};
+    const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
     // Must match the full segment set enrichKomDetails actually processes -
     // achievement segments PLUS every segment ever encountered via
     // allSegmentBests (needed for passive-KOM detection). Using only the
@@ -3977,7 +3992,7 @@ async function restartKomScan() {
   if (!confirm('This clears all scan progress and starts over from scratch. Continue?')) return;
   if (!athleteData) return;
   await resetKomScan(athleteData.id);
-  await setCached(athleteData.id, 'kom_enriched_details_v6', {});
+  await setCached(athleteData.id, 'kom_enriched_details_v7', {});
   await renderKomScanUI();
 }
 
@@ -3987,7 +4002,7 @@ async function renderFullKomList() {
   if (!listEl || !athleteData) return;
 
   const progress = await getScanProgress(athleteData.id);
-  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v6', 7*24*60*60*1000)) || {};
+  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
 
   // Determine which KOMs are still actually held vs lost, using enrichment
   // data (comparing the stored effort time against the segment's current
