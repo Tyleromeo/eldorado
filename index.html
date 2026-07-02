@@ -694,6 +694,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
           <option value="65_69">65+</option>
         </select>
       </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Age</div><div class="setting-sub">Your current age - used to calculate fitness age from your VO2 max</div></div>
+        <input class="setting-input" id="set-age" type="number" placeholder="45" onchange="saveSettings(); renderVO2Max();" /> <span style="font-size:12px;color:#7d8590;margin-left:4px">years</span>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Measured VO2 max</div><div class="setting-sub">Enter your latest reading from a watch, app, or lab test - this replaces the dashboard's formula-based estimate wherever you've entered one</div></div>
+        <input class="setting-input" id="set-measured-vo2" type="number" step="0.1" placeholder="e.g. 58" onchange="saveSettings(); renderVO2Max();" /> <span style="font-size:12px;color:#7d8590;margin-left:4px">ml/kg/min</span>
+      </div>
     </div>
     <div class="settings-section">
       <div class="settings-title">Location</div>
@@ -910,7 +918,7 @@ async function loadPowerPRsFromSupabase(athlete_id) {
 }
 
 // ==================== SETTINGS ====================
-const DEFAULTS = { ftp:249, weight:75, runPace:'7:30', css:'1:45', restingHR:58, maxHR:192, ageGroup:'35_44', city:'Smithtown, NY', units:'imperial' };
+const DEFAULTS = { ftp:249, weight:75, runPace:'7:30', css:'1:45', restingHR:58, maxHR:192, ageGroup:'35_44', city:'Smithtown, NY', units:'imperial', age:null, measuredVO2Max:null };
 
 function getSettings() {
   try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ed_settings')||'{}')); }
@@ -928,7 +936,9 @@ function saveSettings() {
     maxHR: parseInt(getVal('set-max-hr', DEFAULTS.maxHR)) || DEFAULTS.maxHR,
     ageGroup: getVal('set-age-group', DEFAULTS.ageGroup) || DEFAULTS.ageGroup,
     city: getVal('set-city', DEFAULTS.city) || DEFAULTS.city,
-    units: getVal('set-units', DEFAULTS.units) || DEFAULTS.units
+    units: getVal('set-units', DEFAULTS.units) || DEFAULTS.units,
+    age: parseInt(getVal('set-age', '')) || null,
+    measuredVO2Max: parseFloat(getVal('set-measured-vo2', '')) || null
   };
   localStorage.setItem('ed_settings', JSON.stringify(s));
   window.USER_FTP = s.ftp;
@@ -949,6 +959,8 @@ function loadSettingsUI() {
   setVal('set-age-group', s.ageGroup);
   setVal('set-city', s.city);
   setVal('set-units', s.units);
+  if (s.age) setVal('set-age', s.age);
+  if (s.measuredVO2Max) setVal('set-measured-vo2', s.measuredVO2Max);
 }
 
 function disconnectStrava() {
@@ -2831,21 +2843,90 @@ function renderZones() {
   renderVO2Max();
 }
 
+// VO2 max norms by age decade, men, ml/kg/min. Earlier versions of this
+// table used general (sedentary) population norms from ACSM/Cooper
+// Institute, which only run up to the low-40s even for 20-somethings - that
+// badly under-differentiates scores in the high-50s/60s range that
+// competitive runners and cyclists routinely reach (a 55-58 ml/kg/min score
+// is reported as roughly average for a trained collegiate male distance
+// runner). This table instead anchors to trained/competitive-athlete
+// population data, applying the well-documented ~8-10% per decade aerobic
+// decline rate, so a given score is compared against people who actually
+// train at a similar level rather than the general public.
+const VO2_NORMS_BY_AGE_MALE = [
+  { age: 22, good: 58 },  // Competitive collegiate-level distance runner/cyclist baseline
+  { age: 32, good: 53 },
+  { age: 42, good: 48 },
+  { age: 52, good: 43 },
+  { age: 62, good: 38 },
+  { age: 72, good: 33 }
+];
+
+// Estimates "fitness age": the age at which your VO2 max would be considered
+// roughly average-to-good, based on published norms. Works by finding where
+// your VO2 max falls on the age curve via linear interpolation between known
+// points - e.g. a VO2 max between two age brackets' reference values gets a
+// fitness age interpolated between those ages.
+function calcFitnessAge(vo2max) {
+  const norms = VO2_NORMS_BY_AGE_MALE;
+  if (vo2max >= norms[0].good) {
+    // Fitter than even the youngest competitive-athlete reference point
+    // (58 at age 22) - this is genuinely elite territory, so extrapolate
+    // gently downward with a floor at 18 rather than claiming something
+    // implausible.
+    return Math.max(18, Math.round(norms[0].age - (vo2max - norms[0].good) * 0.8));
+  }
+  if (vo2max <= norms[norms.length-1].good) {
+    // Below the oldest bracket's reference - extrapolate upward.
+    const last = norms[norms.length-1];
+    return Math.round(last.age + (last.good - vo2max) * 2);
+  }
+  for (let i = 0; i < norms.length - 1; i++) {
+    const a = norms[i], b = norms[i+1];
+    if (vo2max <= a.good && vo2max >= b.good) {
+      const frac = (a.good - vo2max) / (a.good - b.good);
+      return Math.round(a.age + frac * (b.age - a.age));
+    }
+  }
+  return null;
+}
+
 function renderVO2Max() {
   const el = document.getElementById('vo2max-display');
   if (!el) return;
+  const s = getSettings();
   const v = calcVO2Max();
-  if (!v) { el.innerHTML = '<p style="font-size:13px;color:#7d8590">Set a threshold run pace in Settings to see an estimate.</p>'; return; }
+  if (!v && !s.measuredVO2Max) { el.innerHTML = '<p style="font-size:13px;color:#7d8590">Set a threshold run pace in Settings to see an estimate.</p>'; return; }
 
   let hrRow = '';
-  if (v.hrBased) {
+  if (v && v.hrBased) {
     hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">'+v.hrBased+'</div><div class="metric-sub">From max HR of '+v.observedMaxHR+' bpm</div></div>';
   } else {
     hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">--</div><div class="metric-sub">No max HR data found in recent runs</div></div>';
   }
 
+  // Measured value (manually entered from a watch/app/lab test) gets its
+  // own card and takes priority for the fitness age calculation, since it's
+  // a direct reading rather than a formula-derived estimate.
+  let measuredRow = '';
+  let fitnessAgeRow = '';
+  if (s.measuredVO2Max) {
+    measuredRow = '<div class="metric" style="margin-top:0;grid-column:1/-1;border:1px solid #C9A227"><div class="metric-label">Measured VO2 max</div><div class="metric-val" style="color:#C9A227">'+s.measuredVO2Max+'</div><div class="metric-sub">Your latest manually-entered reading</div></div>';
+
+    if (s.age) {
+      const fitnessAge = calcFitnessAge(s.measuredVO2Max);
+      const diff = s.age - fitnessAge;
+      const diffText = diff > 0 ? (diff+' years younger than your actual age') : diff < 0 ? ((-diff)+' years older than your actual age') : 'matches your actual age';
+      fitnessAgeRow = '<div class="metric" style="margin-top:0;grid-column:1/-1"><div class="metric-label">Estimated fitness age</div><div class="metric-val" style="color:#3fb950">'+fitnessAge+'</div><div class="metric-sub">Based on published age-norms for VO2 max - '+diffText+'. For general guidance only, not a clinical measure.</div></div>';
+    } else {
+      fitnessAgeRow = '<div class="metric" style="margin-top:0;grid-column:1/-1"><div class="metric-label">Estimated fitness age</div><div class="metric-val">--</div><div class="metric-sub">Enter your age in Settings to see this</div></div>';
+    }
+  }
+
   el.innerHTML = '<div class="g2">'+
-    '<div class="metric" style="margin-top:0"><div class="metric-label">Daniels VDOT estimate</div><div class="metric-val">'+v.vdot+'</div><div class="metric-sub">From '+getSettings().runPace+' /mi threshold pace</div></div>'+
+    measuredRow+
+    fitnessAgeRow+
+    (v ? '<div class="metric" style="margin-top:0"><div class="metric-label">Daniels VDOT estimate</div><div class="metric-val">'+v.vdot+'</div><div class="metric-sub">From '+s.runPace+' /mi threshold pace</div></div>' : '')+
     hrRow+
     '</div>';
 
