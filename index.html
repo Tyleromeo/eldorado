@@ -3923,7 +3923,7 @@ function renderActivityList() {
 }
 
 // ==================== GEAR ====================
-function renderGear() {
+async function renderGear() {
   const bikeSection = document.getElementById('bikes-section');
   const shoeSection = document.getElementById('shoes-section');
   if (!bikeSection) return;
@@ -3933,50 +3933,92 @@ function renderGear() {
     return;
   }
 
-  // Strava gear: bikes have resource_state + frame_type, shoes don't have frame_type
-  // Most reliable: check if resource_state is present and name/distance exist
+  // Bike detection: Strava puts frame_type on bikes but not shoes, so that's
+  // the most reliable signal. The brand-name fallback is a safety net for
+  // odd gear records where frame_type didn't come through.
   const bikes = gearData.filter(g => g.distance !== undefined && (g.frame_type !== undefined || (g.name && (g.name.toLowerCase().includes('bike') || g.name.toLowerCase().includes('specialized') || g.name.toLowerCase().includes('trek') || g.name.toLowerCase().includes('giant') || g.name.toLowerCase().includes('cannondale') || g.name.toLowerCase().includes('bianchi') || g.name.toLowerCase().includes('cervelo') || g.name.toLowerCase().includes('pinarello') || g.name.toLowerCase().includes('winspace')))));
   const shoes = gearData.filter(g => g.distance !== undefined && !bikes.includes(g));
 
-  // Bikes section
-  const bikeHTML = bikes.length ? bikes.map(g => {
+  // Build activity_id -> gear_id map once so we can efficiently count
+  // KOMs/Top10s per gear item. Every KOM/Top10 entry has an activity_id
+  // referring back to the ride/run/hike it was earned on.
+  const activityGearMap = {};
+  allActivities.forEach(a => { if (a.gear_id) activityGearMap[a.id] = a.gear_id; });
+
+  const gearAchievementCounts = {}; // gear_id -> { koms, top10s }
+  if (athleteData) {
+    try {
+      const progress = await getScanProgress(athleteData.id);
+      const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
+
+      // Match the same held/lost/passive logic renderFullKomList uses, so
+      // "KOMs on this gear" reflects currently-held crowns, not stale
+      // historical achievements that have since been beaten.
+      const stillHeldKoms = progress.koms.filter(k => {
+        const detail = enrichedCache[k.segment_id];
+        const myBest = detail && detail.my_pr_time != null ? Math.min(k.elapsed, detail.my_pr_time) : k.elapsed;
+        return !(detail && !detail.hazardous && detail.kom_time && detail.kom_time < myBest);
+      });
+      const lostKoms = progress.koms.filter(k => {
+        const detail = enrichedCache[k.segment_id];
+        const myBest = detail && detail.my_pr_time != null ? Math.min(k.elapsed, detail.my_pr_time) : k.elapsed;
+        return !!(detail && !detail.hazardous && detail.kom_time && detail.kom_time < myBest);
+      });
+      const achievementSegmentIds = new Set(progress.koms.map(k => k.segment_id));
+      const passiveKoms = Object.entries(progress.allSegmentBests || {})
+        .filter(([segId]) => !achievementSegmentIds.has(parseInt(segId)) && !achievementSegmentIds.has(segId))
+        .filter(([segId]) => enrichedCache[segId] && enrichedCache[segId].is_passive_kom)
+        .map(([, best]) => best);
+      const allHeldKoms = [...stillHeldKoms, ...passiveKoms];
+      const allTop10s = [...progress.top10s, ...lostKoms];
+
+      function bump(entry, kind) {
+        const gearId = activityGearMap[entry.activity_id];
+        if (!gearId) return;
+        if (!gearAchievementCounts[gearId]) gearAchievementCounts[gearId] = { koms: 0, top10s: 0 };
+        gearAchievementCounts[gearId][kind]++;
+      }
+      allHeldKoms.forEach(k => bump(k, 'koms'));
+      allTop10s.forEach(t => bump(t, 'top10s'));
+    } catch (e) { /* if scan hasn't been run yet, counts just stay at 0 */ }
+  }
+
+  // Render a single gear card - shared shape so bikes and shoes look
+  // consistent even though the icons and units differ.
+  function gearCard(g, icon) {
     const mi = Math.round(g.distance / 1609.34);
-    const pct = Math.min(100, Math.round(mi / 5000 * 100));
-    const barColor = pct > 80 ? '#f85149' : pct > 50 ? '#d29922' : '#3fb950';
     const lastUsed = allActivities.filter(a => a.gear_id === g.id)[0];
     const lastDate = lastUsed ? new Date(lastUsed.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Unknown';
+    const counts = gearAchievementCounts[g.id] || { koms: 0, top10s: 0 };
     return '<div class="card" style="margin-bottom:0">' +
-      '<div class="card-title"><div class="card-title-left">' +
-      '<svg class="card-icon" viewBox="0 0 24 24"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>' +
-      g.name + '</div>' + (g.primary ? '<span class="badge b-green">Primary</span>' : '') + '</div>' +
+      '<div class="card-title"><div class="card-title-left">' + icon + g.name + '</div>' +
+      (g.primary ? '<span class="badge b-green">Primary</span>' : '') + '</div>' +
       '<div style="font-size:28px;font-weight:600;color:#e6edf3;margin-bottom:4px">' + mi.toLocaleString() + ' mi</div>' +
-      '<div style="font-size:11px;color:#7d8590;margin-bottom:8px">Last used: ' + lastDate + '</div>' +
-      '<div style="background:#21262d;border-radius:4px;height:6px;margin-bottom:8px"><div style="width:' + pct + '%;height:100%;border-radius:4px;background:' + barColor + '"></div></div>' +
-      '<div style="font-size:11px;color:#7d8590">' + pct + '% of 5,000 mi service interval</div>' +
-      '</div>';
-  }).join('') : '<p style="font-size:13px;color:#7d8590">No bikes found. Make sure your rides have a bike assigned in Strava.</p>';
+      '<div style="font-size:11px;color:#7d8590;margin-bottom:12px">Last used: ' + lastDate + '</div>' +
+      '<div style="display:flex;gap:16px;padding-top:10px;border-top:1px solid #21262d">' +
+        '<div><div style="font-size:11px;color:#7d8590;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.5px">KOMs earned</div>' +
+        '<div style="font-size:20px;font-weight:600;color:#C9A227">' + counts.koms + '</div></div>' +
+        '<div><div style="font-size:11px;color:#7d8590;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.5px">Top 10s</div>' +
+        '<div style="font-size:20px;font-weight:600;color:#58a6ff">' + counts.top10s + '</div></div>' +
+      '</div>' +
+    '</div>';
+  }
 
-  bikeSection.innerHTML = '<h3 style="font-size:13px;font-weight:600;color:#7d8590;margin-bottom:1rem;text-transform:uppercase;letter-spacing:1px">Bikes</h3><div class="g2" style="margin-bottom:1.5rem">' + bikeHTML + '</div>';
+  // Sort by mileage descending so the most-used gear surfaces first
+  const rankedBikes = [...bikes].sort((a, b) => (b.distance || 0) - (a.distance || 0));
+  const rankedShoes = [...shoes].sort((a, b) => (b.distance || 0) - (a.distance || 0));
 
-  // Shoes section
-  if (shoes.length) {
-    const shoeHTML = shoes.map(g => {
-      const mi = Math.round(g.distance / 1609.34);
-      const pct = Math.min(100, Math.round(mi / 500 * 100));
-      const barColor = pct > 80 ? '#f85149' : pct > 50 ? '#d29922' : '#3fb950';
-      const lastUsed = allActivities.filter(a => a.gear_id === g.id)[0];
-      const lastDate = lastUsed ? new Date(lastUsed.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Unknown';
-      return '<div class="card" style="margin-bottom:0">' +
-        '<div class="card-title"><div class="card-title-left">' +
-        '<svg class="card-icon" viewBox="0 0 24 24"><path d="M2 18h20v2H2z"/><path d="M2 14l5-4 4 3 5-5 6 6"/></svg>' +
-        g.name + '</div>' + (g.primary ? '<span class="badge b-green">Primary</span>' : '') + '</div>' +
-        '<div style="font-size:28px;font-weight:600;color:#e6edf3;margin-bottom:4px">' + mi.toLocaleString() + ' mi</div>' +
-        '<div style="font-size:11px;color:#7d8590;margin-bottom:8px">Last used: ' + lastDate + '</div>' +
-        '<div style="background:#21262d;border-radius:4px;height:6px;margin-bottom:8px"><div style="width:' + pct + '%;height:100%;border-radius:4px;background:' + barColor + '"></div></div>' +
-        '<div style="font-size:11px;color:#7d8590">' + pct + '% of 500 mi shoe interval</div>' +
-        '</div>';
-    }).join('');
-    shoeSection.innerHTML = '<h3 style="font-size:13px;font-weight:600;color:#7d8590;margin-bottom:1rem;text-transform:uppercase;letter-spacing:1px">Shoes</h3><div class="g2">' + shoeHTML + '</div>';
+  const bikeIcon = '<svg class="card-icon" viewBox="0 0 24 24"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>';
+  const shoeIcon = '<svg class="card-icon" viewBox="0 0 24 24"><path d="M2 18h20v2H2z"/><path d="M2 14l5-4 4 3 5-5 6 6"/></svg>';
+
+  const bikeHTML = rankedBikes.length
+    ? rankedBikes.map(g => gearCard(g, bikeIcon)).join('')
+    : '<p style="font-size:13px;color:#7d8590">No bikes found. Make sure your rides have a bike assigned in Strava.</p>';
+  bikeSection.innerHTML = '<h3 style="font-size:13px;font-weight:600;color:#7d8590;margin-bottom:1rem;text-transform:uppercase;letter-spacing:1px">Bikes (ranked by mileage)</h3><div class="g2" style="margin-bottom:1.5rem">' + bikeHTML + '</div>';
+
+  if (rankedShoes.length) {
+    const shoeHTML = rankedShoes.map(g => gearCard(g, shoeIcon)).join('');
+    shoeSection.innerHTML = '<h3 style="font-size:13px;font-weight:600;color:#7d8590;margin-bottom:1rem;text-transform:uppercase;letter-spacing:1px">Shoes (ranked by mileage)</h3><div class="g2">' + shoeHTML + '</div>';
   } else {
     shoeSection.innerHTML = '';
   }
