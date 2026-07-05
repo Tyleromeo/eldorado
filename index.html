@@ -514,6 +514,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="nav-btn" id="kom-sort-popularity" onclick="setKomSortMode('popularity')" style="font-size:12px;padding:4px 10px">Most competitive</button>
       <button class="nav-btn" id="kom-sort-duration-desc" onclick="setKomSortMode('duration-desc')" style="font-size:12px;padding:4px 10px">Longest effort</button>
       <button class="nav-btn" id="kom-sort-duration-asc" onclick="setKomSortMode('duration-asc')" style="font-size:12px;padding:4px 10px">Shortest effort</button>
+      <button class="nav-btn" id="kom-sort-former" onclick="setKomSortMode('former')" style="font-size:12px;padding:4px 10px;display:none">Former KOMs first</button>
     </div>
     <div id="kom-scan-status" style="font-size:13px;color:#7d8590;padding:8px 0"></div>
     <div id="kom-scan-controls" style="margin-bottom:12px"></div>
@@ -4015,6 +4016,20 @@ function setKomView(view) {
   document.querySelectorAll('[id^=kom-view-]').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('kom-view-' + view);
   if (btn) btn.classList.add('active');
+
+  // The "Former KOMs first" sort only makes sense when viewing Top 10s
+  // (that's where former-KOM entries actually appear), so show/hide it
+  // based on the current view. Reset to date sort if switching away from
+  // Top 10s while that sort mode was selected, to avoid a stuck state
+  // where the sort dropdown is invisible but still applied.
+  const formerBtn = document.getElementById('kom-sort-former');
+  if (formerBtn) {
+    formerBtn.style.display = view === 'top10s' ? '' : 'none';
+    if (view !== 'top10s' && komSortMode === 'former') {
+      setKomSortMode('date');
+      return; // setKomSortMode already calls renderFullKomList
+    }
+  }
   renderFullKomList();
 }
 
@@ -4367,6 +4382,17 @@ async function renderFullKomList() {
       // Shortest efforts first (e.g. the 30 second sprint KOMs/Top10s) -
       // useful for finding quick, easy-to-chase-down segments.
       return [...list].sort((a, b) => a.elapsed - b.elapsed);
+    }
+    if (komSortMode === 'former') {
+      // Former KOMs first (they lost their crown recently or long ago) so
+      // the user can quickly see everything that's slipped, followed by
+      // the rest in date order. Within each group, most recent first.
+      return [...list].sort((a, b) => {
+        const aFormer = a.formerKom ? 1 : 0;
+        const bFormer = b.formerKom ? 1 : 0;
+        if (aFormer !== bFormer) return bFormer - aFormer;
+        return new Date(b.date) - new Date(a.date);
+      });
     }
     return [...list].sort((a, b) => new Date(b.date) - new Date(a.date));
   }
