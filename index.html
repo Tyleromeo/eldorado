@@ -4649,7 +4649,7 @@ let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true,
 
 // Put your URL-restricted Mapbox public token here for production, or paste it in Settings for local testing.
 // Public Mapbox tokens begin with "pk." and are safe to ship when URL-restricted in your Mapbox account.
-const MAPBOX_PUBLIC_TOKEN = '';
+const MAPBOX_PUBLIC_TOKEN = ''; // Do not commit Mapbox tokens to GitHub. Paste your public pk token in Settings, or inject it from hosting env at build time.
 let eldoradoBaseTileLayer = null;
 
 function getEldoradoMapboxToken() {
