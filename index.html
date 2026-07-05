@@ -3987,6 +3987,42 @@ let komScanFilter = 'all';
 let komSortMode = 'date'; // 'date', 'popularity', 'duration-desc' (longest first), or 'duration-asc' (shortest first)
 let komView = 'koms'; // 'koms' or 'top10s' - which list section is visible
 let komScanRunning = false;
+let expandedTowns = new Set(); // canonical keys of towns currently expanded in the town leaderboard
+
+function toggleTown(key) {
+  if (expandedTowns.has(key)) expandedTowns.delete(key);
+  else expandedTowns.add(key);
+  renderFullKomList();
+}
+
+// Renders the twirl-down content for an expanded town - lists each segment
+// contributing to that town's count, most recent first, with the same badge
+// style used in the main list so it feels consistent.
+function renderTownExpansion(entries, view) {
+  const sorted = [...entries].sort((a, b) => new Date(b.date) - new Date(a.date));
+  return '<div style="padding:4px 0 10px 46px">' + sorted.map(e => {
+    const mins = Math.floor(e.elapsed/60), secs = e.elapsed % 60;
+    const t = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+    const date = new Date(e.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    let badge;
+    if (e.is_kom && e.is_passive) {
+      badge = '<span class="badge b-gold" style="font-size:9px" title="Passive KOM - detected via live comparison">KOM*</span>';
+    } else if (e.is_kom) {
+      badge = '<span class="badge b-gold" style="font-size:9px">KOM</span>';
+    } else if (e.is_former) {
+      badge = '<span class="badge" style="background:#2d1a1a;color:#f85149;border:1px solid #f85149;font-size:9px">Former KOM</span>';
+    } else {
+      badge = '<span class="badge b-blue" style="font-size:9px">#' + e.rank + '</span>';
+    }
+    return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">' +
+      '<div style="flex-shrink:0">' + badge + '</div>' +
+      '<div style="flex:1;min-width:0;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+        '<a href="https://www.strava.com/segments/' + e.segment_id + '" target="_blank" style="color:#e6edf3;text-decoration:none">' + e.segment_name + '</a>' +
+      '</div>' +
+      '<div style="flex-shrink:0;color:#7d8590;font-size:11px">' + date + ' &middot; ' + t + '</div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
 
 function sportGroupForType(type) {
   if (type === 'Ride' || type === 'VirtualRide' || type === 'EBikeRide' || type === 'GravelRide' || type === 'MountainBikeRide') return 'ride';
@@ -3997,6 +4033,7 @@ function sportGroupForType(type) {
 
 function filterKomScan(group) {
   komScanFilter = group;
+  expandedTowns.clear(); // sport filter also changes which towns are ranked
   document.querySelectorAll('[id^=kom-filter-]').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('kom-filter-' + group);
   if (btn) btn.classList.add('active');
@@ -4013,6 +4050,7 @@ function setKomSortMode(mode) {
 
 function setKomView(view) {
   komView = view;
+  expandedTowns.clear(); // town leaderboard changes with view, so any expansions are now stale
   document.querySelectorAll('[id^=kom-view-]').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('kom-view-' + view);
   if (btn) btn.classList.add('active');
@@ -4229,11 +4267,13 @@ async function renderFullKomList() {
       return c + '|' + s;
     }
 
-    // Track display-name frequency per canonical key so the leaderboard
-    // shows whichever spelling actually appears most often on your
-    // segments, rather than picking an arbitrary variant.
+    // Only count what's actually visible in the current view - if the user
+    // is looking at just their KOMs, town rankings should only reflect
+    // KOM counts (not phantom Top-10 counts they can't see in the list
+    // below). Same for the Top 10s view.
     const townCounts = {};
     const displayNameCounts = {};
+    const townEntries = {}; // key -> [{ name, sport, elapsed, date, is_kom, is_former }]
     function countInTown(entry, isKom) {
       if (komScanFilter !== 'all' && sportGroupForType(entry.activity_type) !== komScanFilter) return;
       const detail = enrichedCache[entry.segment_id];
@@ -4242,38 +4282,64 @@ async function renderFullKomList() {
       const display = detail.city + (detail.state ? ', ' + detail.state : '');
       if (!townCounts[key]) townCounts[key] = { koms: 0, top10s: 0 };
       if (!displayNameCounts[key]) displayNameCounts[key] = {};
+      if (!townEntries[key]) townEntries[key] = [];
       displayNameCounts[key][display] = (displayNameCounts[key][display] || 0) + 1;
       if (isKom) townCounts[key].koms++;
       else townCounts[key].top10s++;
+      townEntries[key].push({
+        segment_id: entry.segment_id,
+        segment_name: entry.segment_name,
+        activity_type: entry.activity_type,
+        elapsed: entry.elapsed,
+        date: entry.date,
+        rank: entry.rank,
+        is_kom: isKom,
+        is_former: !!entry.formerKom,
+        is_passive: !!entry.passiveKom
+      });
     }
-    stillHeldKoms.forEach(k => countInTown(k, true));
-    allTop10s.forEach(t => countInTown(t, false));
+    // Feed only the entries relevant to the current view - view-aware
+    // counting is what makes the town rankings match what the list below
+    // shows.
+    if (komView === 'koms') {
+      stillHeldKoms.forEach(k => countInTown(k, true));
+    } else {
+      allTop10s.forEach(t => countInTown(t, false));
+    }
 
     // Pick the most frequently-occurring display name for each canonical key
     const townsRanked = Object.entries(townCounts)
       .map(([key, t]) => {
         const displays = displayNameCounts[key];
         const bestDisplay = Object.keys(displays).sort((a, b) => displays[b] - displays[a])[0];
-        return { town: bestDisplay, koms: t.koms, top10s: t.top10s, total: t.koms + t.top10s, score: t.koms * 3 + t.top10s };
+        return { key, town: bestDisplay, koms: t.koms, top10s: t.top10s, total: t.koms + t.top10s };
       })
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.total - a.total);
     if (townsRanked.length) {
       const top10 = townsRanked.slice(0, 10);
-      const maxScore = top10[0].score;
+      const maxTotal = top10[0].total;
+      const viewLabel = komView === 'koms' ? 'KOMs' : 'Top 10s';
+      const barColor = komView === 'koms' ? '#C9A227' : '#58a6ff';
       townEl.innerHTML = '<div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline">' +
-        '<span>Top towns by achievements' + (komScanFilter !== 'all' ? ' (' + komScanFilter + ')' : '') + '</span>' +
-        '<span style="font-size:11px;color:#7d8590;font-weight:400">' + townsRanked.length + ' town' + (townsRanked.length === 1 ? '' : 's') + ' total &middot; KOMs weighted 3x</span>' +
+        '<span>Top towns by ' + viewLabel + (komScanFilter !== 'all' ? ' (' + komScanFilter + ')' : '') + '</span>' +
+        '<span style="font-size:11px;color:#7d8590;font-weight:400">' + townsRanked.length + ' town' + (townsRanked.length === 1 ? '' : 's') + '</span>' +
         '</div>' +
         top10.map((t, i) => {
-          const barWidth = Math.round((t.score / maxScore) * 100);
-          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
-            '<div style="flex-shrink:0;width:22px;font-size:12px;color:#7d8590;text-align:right">' + (i + 1) + '.</div>' +
-            '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.town + '</div>' +
-            '<div style="height:4px;background:#21262d;border-radius:2px;margin-top:3px"><div style="height:4px;width:' + barWidth + '%;background:#C9A227;border-radius:2px"></div></div></div>' +
-            '<div style="flex-shrink:0;font-size:12px;color:#7d8590;text-align:right;min-width:110px">' +
-            '<span style="color:#C9A227">' + t.koms + ' KOM' + (t.koms === 1 ? '' : 's') + '</span> &middot; ' +
-            '<span style="color:#58a6ff">' + t.top10s + ' T10' + (t.top10s === 1 ? '' : 's') + '</span></div>' +
-            '</div>';
+          const count = komView === 'koms' ? t.koms : t.top10s;
+          const barWidth = Math.round((count / maxTotal) * 100);
+          const expanded = expandedTowns.has(t.key);
+          const arrow = expanded ? '&#9660;' : '&#9654;'; // filled down/right triangle
+          const expandedContent = expanded ? renderTownExpansion(townEntries[t.key], komView) : '';
+          return '<div style="border-bottom:1px solid #21262d">' +
+            '<div onclick="toggleTown(\'' + t.key.replace(/'/g, "\\'") + '\')" style="display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer">' +
+              '<div style="flex-shrink:0;width:14px;font-size:9px;color:#7d8590">' + arrow + '</div>' +
+              '<div style="flex-shrink:0;width:22px;font-size:12px;color:#7d8590;text-align:right">' + (i + 1) + '.</div>' +
+              '<div style="flex:1;min-width:0"><div style="font-size:13px;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + t.town + '</div>' +
+              '<div style="height:4px;background:#21262d;border-radius:2px;margin-top:3px"><div style="height:4px;width:' + barWidth + '%;background:' + barColor + ';border-radius:2px"></div></div></div>' +
+              '<div style="flex-shrink:0;font-size:12px;text-align:right;min-width:80px;color:' + barColor + '">' + count + ' ' + (komView === 'koms' ? (count === 1 ? 'KOM' : 'KOMs') : (count === 1 ? 'T10' : 'T10s')) + '</div>' +
+            '</div>' +
+            expandedContent +
+          '</div>';
         }).join('');
     } else {
       townEl.innerHTML = '<div style="font-size:12px;color:#7d8590;padding:8px 0">Town rankings will appear here once segments are enriched with location data.</div>';
