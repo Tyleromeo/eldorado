@@ -4181,20 +4181,52 @@ async function renderFullKomList() {
   // whichever sport view the user is looking at.
   const townEl = document.getElementById('town-leaderboard');
   if (townEl) {
+    // Normalize town names so variant spellings (user-entered on Strava,
+    // never cleaned up) don't produce duplicate leaderboard entries.
+    // Handles case, punctuation, "Saint"/"St", and state abbreviations vs
+    // full names - the same underlying town winds up in the same bucket
+    // regardless of which spelling variant was on which segment.
+    function normalizeKey(city, state) {
+      let c = (city || '').toLowerCase().trim();
+      c = c.replace(/\./g, '').replace(/\s+/g, ' '); // strip periods, collapse whitespace
+      c = c.replace(/^saint\b/, 'st'); // "Saint James" and "St James" -> same
+      let s = (state || '').toLowerCase().trim().replace(/\./g, '');
+      // Common state name -> abbreviation mapping for the states most likely
+      // to appear (rather than a full US mapping we won't fully use).
+      const stateAbbrev = { 'new york': 'ny', 'california': 'ca', 'connecticut': 'ct',
+        'new jersey': 'nj', 'massachusetts': 'ma', 'pennsylvania': 'pa',
+        'florida': 'fl', 'north carolina': 'nc', 'colorado': 'co', 'vermont': 'vt' };
+      if (stateAbbrev[s]) s = stateAbbrev[s];
+      return c + '|' + s;
+    }
+
+    // Track display-name frequency per canonical key so the leaderboard
+    // shows whichever spelling actually appears most often on your
+    // segments, rather than picking an arbitrary variant.
     const townCounts = {};
+    const displayNameCounts = {};
     function countInTown(entry, isKom) {
       if (komScanFilter !== 'all' && sportGroupForType(entry.activity_type) !== komScanFilter) return;
       const detail = enrichedCache[entry.segment_id];
       if (!detail || !detail.city) return;
-      const key = detail.city + (detail.state ? ', ' + detail.state : '');
-      if (!townCounts[key]) townCounts[key] = { town: key, koms: 0, top10s: 0 };
+      const key = normalizeKey(detail.city, detail.state);
+      const display = detail.city + (detail.state ? ', ' + detail.state : '');
+      if (!townCounts[key]) townCounts[key] = { koms: 0, top10s: 0 };
+      if (!displayNameCounts[key]) displayNameCounts[key] = {};
+      displayNameCounts[key][display] = (displayNameCounts[key][display] || 0) + 1;
       if (isKom) townCounts[key].koms++;
       else townCounts[key].top10s++;
     }
     stillHeldKoms.forEach(k => countInTown(k, true));
     allTop10s.forEach(t => countInTown(t, false));
-    const townsRanked = Object.values(townCounts)
-      .map(t => ({ ...t, total: t.koms + t.top10s, score: t.koms * 3 + t.top10s })) // KOMs weighted 3x since they're rarer and more valuable
+
+    // Pick the most frequently-occurring display name for each canonical key
+    const townsRanked = Object.entries(townCounts)
+      .map(([key, t]) => {
+        const displays = displayNameCounts[key];
+        const bestDisplay = Object.keys(displays).sort((a, b) => displays[b] - displays[a])[0];
+        return { town: bestDisplay, koms: t.koms, top10s: t.top10s, total: t.koms + t.top10s, score: t.koms * 3 + t.top10s };
+      })
       .sort((a, b) => b.score - a.score);
     if (townsRanked.length) {
       const top10 = townsRanked.slice(0, 10);
