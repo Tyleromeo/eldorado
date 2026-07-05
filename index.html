@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ElDorado</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
@@ -198,6 +201,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .seg-meta { font-size:11px; color:#7d8590; margin-top:2px; }
 .age-badge { display:inline-block; font-size:10px; padding:2px 7px; border-radius:4px; font-weight:600; background:#2d1a00; color:#C9A227; border:1px solid #C9A227; }
 
+
+/* MAP */
+.map-shell { position: relative; }
+#eldorado-map { height: 72vh; min-height: 520px; border-radius: 12px; overflow: hidden; background: #0d1117; border: 1px solid #30363d; }
+.map-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+.map-toggle { background:#0d1117; border:1px solid #30363d; color:#7d8590; border-radius:999px; padding:7px 11px; font-size:12px; cursor:pointer; }
+.map-toggle.active { background:#21262d; color:#e6edf3; border-color:#C9A227; }
+.map-toggle:hover { color:#e6edf3; border-color:#8b949e; }
+.map-legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:#7d8590; margin-top:10px; }
+.map-legend-item { display:flex; align-items:center; gap:5px; }
+.map-swatch { width:12px; height:12px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.25); }
+.map-status { font-size:12px; color:#7d8590; margin:10px 0 0; line-height:1.45; }
+.map-popup { color:#0d1117; font-size:12px; line-height:1.45; min-width:220px; }
+.map-popup-title { font-weight:700; margin-bottom:4px; }
+.map-popup a { color:#FC4C02; text-decoration:none; }
+.leaflet-container { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+@media(max-width:720px){ #eldorado-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
+
 /* ROUTES / GPX */
 .route-drop { border:2px dashed #30363d; border-radius:12px; padding:2.5rem; text-align:center; cursor:pointer; transition:border-color 0.2s; }
 .route-drop:hover { border-color:#C9A227; }
@@ -239,6 +260,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="nav-btn" onclick="showSection('activities')">Activities</button>
       <button class="nav-btn" onclick="showSection('gear')">Gear</button>
       <button class="nav-btn" onclick="showSection('segments')">Segments</button>
+      <button class="nav-btn" onclick="showSection('map')">Map</button>
       <button class="nav-btn" onclick="showSection('collaborators')">Collaborators</button>
       <button class="nav-btn" onclick="showSection('weather')">Weather</button>
       <button class="nav-btn" onclick="showSection('goals')">Goals</button>
@@ -636,6 +658,37 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
 </div>
 
+
+<!-- MAP -->
+<div id="section-map" class="section">
+  <div class="section-header"><h2>Map</h2><p>Turn on KOMs, Top 10s, wind advantage, and ride/run heat from your Strava history.</p></div>
+  <div class="card">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21 1 6"/><line x1="8" y1="3" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/></svg>Segment hunter map</div>
+      <span id="map-counts" style="font-size:12px;color:#7d8590"></span>
+    </div>
+    <div class="map-toolbar">
+      <button class="map-toggle active" id="map-toggle-koms" onclick="toggleEldoradoMapLayer('koms')">KOMs / CRs</button>
+      <button class="map-toggle active" id="map-toggle-top10s" onclick="toggleEldoradoMapLayer('top10s')">Top 10s</button>
+      <button class="map-toggle active" id="map-toggle-bike" onclick="toggleEldoradoMapLayer('bike')">Bike</button>
+      <button class="map-toggle active" id="map-toggle-run" onclick="toggleEldoradoMapLayer('run')">Run</button>
+      <button class="map-toggle active" id="map-toggle-wind" onclick="toggleEldoradoMapLayer('wind')">Wind colors</button>
+      <button class="map-toggle active" id="map-toggle-today" onclick="setEldoradoMapWindDay('today')">Today</button>
+      <button class="map-toggle" id="map-toggle-tomorrow" onclick="setEldoradoMapWindDay('tomorrow')">Tomorrow</button>
+      <button class="map-toggle" id="map-toggle-heat" onclick="toggleEldoradoMapLayer('heat')">Heatmap</button>
+    </div>
+    <div class="map-shell"><div id="eldorado-map"></div></div>
+    <div class="map-legend">
+      <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Tailwind 10+ mph</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#d29922"></span>Tailwind 0-9 mph</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#f0883e"></span>Headwind 0-9 mph</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#f85149"></span>Headwind 10+ mph</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#58a6ff"></span>No wind/geometry data</div>
+    </div>
+    <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
+  </div>
+</div>
+
 <!-- ROUTES / GPX -->
 <div id="section-routes" class="section">
   <div class="section-header"><h2>Route viewer</h2><p>Drop a GPX file to visualize elevation, distance, and key stats.</p></div>
@@ -854,6 +907,45 @@ function mapCachedRowToActivity(row) {
   };
 }
 
+
+// Activity route geometry is kept in the generic api_cache table rather than
+// the activities table, because the activities cache intentionally stores only
+// lightweight stats. This powers the Map heatmap without requiring a schema
+// change for every cached activity row.
+function extractActivityGeometry(activities) {
+  const out = {};
+  activities.forEach(function(a) {
+    const poly = a && a.map ? (a.map.summary_polyline || a.map.polyline) : null;
+    if (a && a.id && poly) out[a.id] = { summary_polyline: poly, type: a.type, start_date: a.start_date };
+  });
+  return out;
+}
+
+async function saveActivityGeometryCache(athleteId, activities, mergeExisting) {
+  try {
+    const fresh = extractActivityGeometry(activities);
+    if (!Object.keys(fresh).length) return;
+    let payload = fresh;
+    if (mergeExisting) {
+      const existing = await getCached(athleteId, 'activity_geometry_v1', 365*24*60*60*1000) || {};
+      payload = Object.assign({}, existing, fresh);
+    }
+    await setCached(athleteId, 'activity_geometry_v1', payload);
+  } catch(e) { console.log('Activity geometry cache write error:', e); }
+}
+
+async function applyActivityGeometryCache(athleteId) {
+  try {
+    const cached = await getCached(athleteId, 'activity_geometry_v1', 365*24*60*60*1000) || {};
+    allActivities.forEach(function(a) {
+      const geom = cached[a.id];
+      if (geom && geom.summary_polyline && (!a.map || !a.map.summary_polyline)) {
+        a.map = Object.assign({}, a.map || {}, { summary_polyline: geom.summary_polyline });
+      }
+    });
+  } catch(e) { console.log('Activity geometry cache read error:', e); }
+}
+
 // Writes activities to the Supabase cache without blocking the UI - failures
 // here should never interrupt the dashboard, since Strava remains the source
 // of truth and the cache is purely a rate-limit optimization.
@@ -1000,6 +1092,7 @@ function showSection(name) {
   if (sec) sec.classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => { if (b.textContent.toLowerCase().includes(name) || (name==='dashboard' && b.textContent==='Dashboard')) b.classList.add('active'); });
   if (name === 'weather' && !weatherLoaded) { weatherLoaded = true; loadWeather(); }
+  if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); } catch(e) { console.error('renderMap:', e); } }, 80); }
   if (name === 'goals') { try { renderGoals(); } catch(e) { console.error('renderGoals:', e); } }
   if (name === 'zones') { try { renderZones(); } catch(e) { console.error('renderZones:', e); } }
   if (name === 'segments2') { try { loadStarredSegments(); } catch(e) { console.error('loadStarredSegments:', e); } }
@@ -1189,6 +1282,7 @@ async function loadAll(token) {
     // was last written (cheap - usually 1 page, often 0 results).
     setLoading('Loading activities...', `Using cached data (${cachedActivities.length} activities) — checking for new ones...`);
     allActivities = cachedActivities.map(mapCachedRowToActivity);
+    await applyActivityGeometryCache(athlete.id);
     const mostRecentCached = allActivities.length ? new Date(allActivities[0].start_date) : null;
 
     try {
@@ -1200,6 +1294,7 @@ async function loadAll(token) {
         if (newOnes.length) {
           allActivities = [...newOnes, ...allActivities];
           syncActivitiesToSupabase(newOnes, athlete.id); // fire and forget cache update
+          saveActivityGeometryCache(athlete.id, newOnes, true); // preserve polylines for the Map heatmap
         }
       }
     } catch(e) { console.log('Incremental fetch error:', e); }
@@ -1219,6 +1314,7 @@ async function loadAll(token) {
     }                                                            // it can happen mid-history, so we keep fetching until truly empty
     localStorage.setItem('ed_last_full_sync', new Date().toISOString());
     syncActivitiesToSupabase(allActivities, athlete.id); // fire and forget cache write
+    saveActivityGeometryCache(athlete.id, allActivities, false); // preserve polylines for the Map heatmap
 
     // Log the actual date range covered so we can verify coverage directly,
     // rather than just trusting the activity count - a 2019 segment effort
@@ -1635,6 +1731,9 @@ async function enrichKomDetails(token, athleteId) {
         average_grade: seg ? seg.average_grade : null,
         athlete_count: seg ? seg.athlete_count : null,
         effort_count: seg ? seg.effort_count : null,
+        start_latlng: seg ? seg.start_latlng : null,
+        end_latlng: seg ? seg.end_latlng : null,
+        map_polyline: seg && seg.map ? (seg.map.polyline || seg.map.summary_polyline || null) : null,
         kom_time: komTime,
         my_pr_time: myStats ? myStats.pr_elapsed_time : null,
         my_effort_count: myStats ? myStats.effort_count : null,
@@ -4522,6 +4621,256 @@ async function renderFullKomList() {
   }
 
   listEl.innerHTML = html;
+}
+
+
+// ==================== MAP ====================
+let eldoradoMap = null;
+let eldoradoMapLayers = { achievements: null, heat: null };
+let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today' };
+
+function initEldoradoMap() {
+  const el = document.getElementById('eldorado-map');
+  if (!el || typeof L === 'undefined') return;
+  if (eldoradoMap) { setTimeout(function(){ eldoradoMap.invalidateSize(); }, 50); return; }
+  eldoradoMap = L.map('eldorado-map', { scrollWheelZoom: false }).setView([40.86, -73.20], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(eldoradoMap);
+  eldoradoMapLayers.achievements = L.layerGroup().addTo(eldoradoMap);
+  eldoradoMapLayers.heat = L.layerGroup().addTo(eldoradoMap);
+  setTimeout(function(){ eldoradoMap.invalidateSize(); }, 150);
+}
+
+function setMapStatus(msg) {
+  const el = document.getElementById('map-status');
+  if (el) el.innerHTML = msg;
+}
+
+function toggleEldoradoMapLayer(key) {
+  eldoradoMapState[key] = !eldoradoMapState[key];
+  const btn = document.getElementById('map-toggle-' + key);
+  if (btn) btn.classList.toggle('active', !!eldoradoMapState[key]);
+  renderEldoradoMap();
+}
+
+function setEldoradoMapWindDay(day) {
+  eldoradoMapState.windDay = day;
+  ['today','tomorrow'].forEach(function(d) {
+    const btn = document.getElementById('map-toggle-' + d);
+    if (btn) btn.classList.toggle('active', d === day);
+  });
+  renderEldoradoMap();
+}
+
+function decodePolyline(str) {
+  if (!str || typeof str !== 'string') return [];
+  let index = 0, lat = 0, lng = 0, coordinates = [];
+  while (index < str.length) {
+    let b, shift = 0, result = 0;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && index < str.length);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+    shift = 0; result = 0;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && index < str.length);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+    coordinates.push([lat / 1e5, lng / 1e5]);
+  }
+  return coordinates;
+}
+
+function bearingBetween(a, b) {
+  const lat1 = a[0] * Math.PI / 180, lat2 = b[0] * Math.PI / 180;
+  const dLon = (b[1] - a[1]) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function angleDiff(a, b) {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function getMapWind(day) {
+  const data = window._wxData;
+  if (!data || !data.daily || !data.daily.time) return null;
+  const idx = day === 'tomorrow' ? 1 : 0;
+  if (data.daily.winddirection_10m_dominant[idx] == null || data.daily.windspeed_10m_max[idx] == null) return null;
+  return { direction: data.daily.winddirection_10m_dominant[idx], speed: msToMph(data.daily.windspeed_10m_max[idx]) };
+}
+
+function windForLine(points) {
+  const wind = getMapWind(eldoradoMapState.windDay);
+  if (!wind || !points || points.length < 2) return null;
+  const start = points[0], end = points[points.length - 1];
+  const segmentBearing = bearingBetween(start, end);
+  const windTo = (wind.direction + 180) % 360; // weather direction is where wind comes FROM; this is where it blows TO
+  const diff = angleDiff(segmentBearing, windTo);
+  const component = wind.speed * Math.cos(diff * Math.PI / 180); // positive tailwind, negative headwind
+  let color = '#58a6ff', label = 'Crosswind / unknown';
+  if (component >= 10) { color = '#3fb950'; label = 'Tailwind ' + Math.round(component) + ' mph'; }
+  else if (component >= 0) { color = '#d29922'; label = 'Tailwind ' + Math.round(component) + ' mph'; }
+  else if (component > -10) { color = '#f0883e'; label = 'Headwind ' + Math.abs(Math.round(component)) + ' mph'; }
+  else { color = '#f85149'; label = 'Headwind ' + Math.abs(Math.round(component)) + ' mph'; }
+  return { color, label, component: Math.round(component), windSpeed: wind.speed, windDirection: wind.direction, segmentBearing: Math.round(segmentBearing) };
+}
+
+function mapColorForEntry(entry, points) {
+  if (eldoradoMapState.wind) {
+    const wind = windForLine(points);
+    if (wind) return wind.color;
+  }
+  if (entry.kind === 'kom') return '#C9A227';
+  return '#58a6ff';
+}
+
+async function getMapAchievementEntries() {
+  if (!athleteData) return { entries: [], needsScan: true, enrichedCache: {} };
+  const progress = await getScanProgress(athleteData.id);
+  const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
+
+  const allKoms = progress.koms.map(function(k) {
+    const detail = enrichedCache[k.segment_id];
+    const myBest = detail && detail.my_pr_time != null ? Math.min(k.elapsed, detail.my_pr_time) : k.elapsed;
+    const lost = !!(detail && !detail.hazardous && detail.kom_time && detail.kom_time < myBest);
+    return Object.assign({}, k, { lost: lost });
+  });
+  const achievementSegmentIds = new Set(progress.koms.map(function(k){ return k.segment_id; }));
+  const passiveKoms = Object.entries(progress.allSegmentBests || {})
+    .filter(function(pair){ return !achievementSegmentIds.has(parseInt(pair[0])) && !achievementSegmentIds.has(pair[0]); })
+    .filter(function(pair){ return enrichedCache[pair[0]] && enrichedCache[pair[0]].is_passive_kom; })
+    .map(function(pair){ return Object.assign({}, pair[1], { lost:false, passiveKom:true }); });
+  const stillHeldKoms = allKoms.filter(function(k){ return !k.lost; }).concat(passiveKoms);
+  const lostKoms = allKoms.filter(function(k){ return k.lost; }).map(function(k){ return Object.assign({}, k, { formerKom:true }); });
+  const top10s = progress.top10s.concat(lostKoms);
+
+  const entries = [];
+  stillHeldKoms.forEach(function(e){ entries.push(Object.assign({}, e, { kind:'kom' })); });
+  top10s.forEach(function(e){ entries.push(Object.assign({}, e, { kind:'top10' })); });
+  return { entries, needsScan: !progress.complete, enrichedCache };
+}
+
+function pointsForMapEntry(entry, detail) {
+  if (detail && detail.map_polyline) {
+    const pts = decodePolyline(detail.map_polyline);
+    if (pts.length >= 2) return pts;
+  }
+  if (detail && Array.isArray(detail.start_latlng) && Array.isArray(detail.end_latlng)) {
+    return [detail.start_latlng, detail.end_latlng].filter(function(p){ return p && p.length === 2 && p[0] != null && p[1] != null; });
+  }
+  return [];
+}
+
+function isMapEntryVisible(entry) {
+  const sport = sportGroupForType(entry.activity_type);
+  const sportOK = (sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run);
+  const kindOK = (entry.kind === 'kom' && eldoradoMapState.koms) || (entry.kind === 'top10' && eldoradoMapState.top10s);
+  return sportOK && kindOK;
+}
+
+function formatSeconds(seconds) {
+  if (seconds == null) return '--';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h) return h + 'h ' + m + 'm ' + s + 's';
+  if (m) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function popupForMapEntry(entry, detail, wind) {
+  const sport = sportGroupForType(entry.activity_type) === 'run' ? 'Run' : 'Bike';
+  const rank = entry.kind === 'kom' ? (entry.passiveKom ? 'KOM*' : 'KOM / CR') : (entry.formerKom ? 'Former KOM / Top 10' : 'Top 10 #' + entry.rank);
+  const date = entry.date ? new Date(entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+  const dist = detail && detail.distance ? (detail.distance/1609.34).toFixed(2) + ' mi' : '';
+  const elev = detail && detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft gain' : '';
+  const windLine = wind ? '<div><strong>' + (eldoradoMapState.windDay === 'today' ? 'Today' : 'Tomorrow') + ':</strong> ' + wind.label + ' <span style="color:#57606a">(' + Math.round(wind.windSpeed) + ' mph wind)</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
+  return '<div class="map-popup">' +
+    '<div class="map-popup-title">' + entry.segment_name + '</div>' +
+    '<div><strong>' + rank + '</strong> &middot; ' + sport + '</div>' +
+    '<div>' + [date, formatSeconds(entry.elapsed)].filter(Boolean).join(' &middot; ') + '</div>' +
+    (dist || elev ? '<div>' + [dist, elev].filter(Boolean).join(' &middot; ') + '</div>' : '') +
+    windLine +
+    '<div style="margin-top:6px"><a href="https://www.strava.com/segments/' + entry.segment_id + '" target="_blank">Open segment in Strava</a></div>' +
+  '</div>';
+}
+
+function renderHeatLayer() {
+  if (!eldoradoMap || !eldoradoMapLayers.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
+  eldoradoMapLayers.heat.clearLayers();
+  if (!eldoradoMapState.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
+  const points = [];
+  let activityCount = 0, missing = 0;
+  allActivities.forEach(function(a) {
+    const sport = sportGroupForType(a.type);
+    if (!((sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run))) return;
+    const poly = a.map && (a.map.summary_polyline || a.map.polyline);
+    const pts = decodePolyline(poly);
+    if (!pts.length) { missing++; return; }
+    activityCount++;
+    pts.forEach(function(p, i) {
+      if (i % 3 === 0) points.push([p[0], p[1], 0.45]);
+    });
+  });
+  if (points.length && L.heatLayer) {
+    L.heatLayer(points, { radius: 12, blur: 18, maxZoom: 15 }).addTo(eldoradoMapLayers.heat);
+  }
+  return { activityCount, pointCount: points.length, missing };
+}
+
+async function renderEldoradoMap() {
+  initEldoradoMap();
+  if (!eldoradoMap || !eldoradoMapLayers.achievements) return;
+  if (!weatherLoaded && !window._wxData) { weatherLoaded = true; loadWeather().then(function(){ renderEldoradoMap(); }).catch(function(){}); }
+  eldoradoMapLayers.achievements.clearLayers();
+
+  const result = await getMapAchievementEntries();
+  const entries = result.entries.filter(isMapEntryVisible);
+  const bounds = [];
+  let drawn = 0, missingGeometry = 0;
+
+  entries.forEach(function(entry) {
+    const detail = result.enrichedCache[entry.segment_id];
+    const points = pointsForMapEntry(entry, detail);
+    if (points.length < 2) { missingGeometry++; return; }
+    const wind = windForLine(points);
+    const color = mapColorForEntry(entry, points);
+    const weight = entry.kind === 'kom' ? 5 : 4;
+    const opacity = entry.kind === 'kom' ? 0.95 : 0.75;
+    const line = L.polyline(points, { color: color, weight: weight, opacity: opacity }).addTo(eldoradoMapLayers.achievements);
+    line.bindPopup(popupForMapEntry(entry, detail, wind));
+    points.forEach(function(p){ bounds.push(p); });
+    drawn++;
+  });
+
+  const heatStats = renderHeatLayer();
+  if (bounds.length) {
+    try { eldoradoMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 }); } catch(e) {}
+  } else if (heatStats.pointCount) {
+    const heatBounds = [];
+    allActivities.forEach(function(a) {
+      const poly = a.map && (a.map.summary_polyline || a.map.polyline);
+      const pts = decodePolyline(poly);
+      if (pts.length) { heatBounds.push(pts[0]); heatBounds.push(pts[pts.length-1]); }
+    });
+    if (heatBounds.length) eldoradoMap.fitBounds(heatBounds, { padding: [24, 24], maxZoom: 12 });
+  }
+
+  const countsEl = document.getElementById('map-counts');
+  if (countsEl) countsEl.textContent = drawn + ' mapped segments' + (eldoradoMapState.heat ? ' · ' + heatStats.activityCount + ' heatmap activities' : '');
+
+  let status = '';
+  if (!athleteData) status = 'Connect Strava first, then this map will draw from your loaded activity and segment data.';
+  else if (!result.entries.length) status = 'No KOM or Top 10 scan data found yet. Go to Segments and run the full scan to populate this map.';
+  else if (drawn === 0) status = 'Your KOM/Top 10 list exists, but segment geometry is not cached yet. Go to Segments and run/enrich the scan again so the map can save start/end coordinates and polylines.';
+  else status = 'Showing ' + drawn + ' KOM/Top 10 segment' + (drawn === 1 ? '' : 's') + ' colored by ' + (eldoradoMapState.wind ? (eldoradoMapState.windDay === 'today' ? 'today\'s' : 'tomorrow\'s') + ' wind advantage.' : 'achievement type.') + (missingGeometry ? ' ' + missingGeometry + ' segment' + (missingGeometry === 1 ? ' is' : 's are') + ' missing geometry until re-enriched.' : '');
+  if (eldoradoMapState.heat) {
+    status += ' Heatmap uses activity polylines available in the current Strava load; cached activities without polylines will not draw until geometry is saved.';
+  }
+  setMapStatus(status);
+  setTimeout(function(){ if (eldoradoMap) eldoradoMap.invalidateSize(); }, 50);
 }
 
 // INIT
