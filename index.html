@@ -227,14 +227,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .route-seg-kom { background:#2d2000; color:#C9A227; border:1px solid #C9A227; }
 .route-seg-top10 { background:#1a2d3a; color:#58a6ff; border:1px solid #388bfd; }
 @media(max-width:720px){ #eldorado-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
-.surface-pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:#7d8590; margin-right:10px; margin-bottom:6px; }
-.surface-dot { width:11px; height:11px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.35); }
-.surface-note-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #30363d; }
-.surface-note-row:last-child { border-bottom:none; }
-.surface-note-title { font-size:12px; font-weight:600; color:#e6edf3; }
-.surface-note-meta { font-size:11px; color:#7d8590; margin-top:2px; line-height:1.35; }
-.surface-mini-btn { background:#0d1117; border:1px solid #30363d; color:#7d8590; border-radius:999px; padding:4px 8px; font-size:10px; cursor:pointer; white-space:nowrap; }
-.surface-mini-btn:hover { color:#e6edf3; border-color:#8b949e; }
 
 /* ROUTES / GPX */
 .route-drop { border:2px dashed #30363d; border-radius:12px; padding:2.5rem; text-align:center; cursor:pointer; transition:border-color 0.2s; }
@@ -282,7 +274,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="nav-btn" onclick="showSection('weather')">Weather</button>
       <button class="nav-btn" onclick="showSection('goals')">Goals</button>
       <button class="nav-btn" onclick="showSection('zones')">Zones</button>
-      <button class="nav-btn" onclick="showSection('routes')">Routes</button>
       <button class="nav-btn" onclick="showSection('settings')">Settings</button>
     </div>
   </div>
@@ -700,7 +691,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="map-toggle" id="map-toggle-wind-tomorrow" onclick="setEldoradoMapWind('tomorrow')">Wind Tomorrow</button>
       <button class="map-toggle" id="map-toggle-heat" onclick="toggleEldoradoMapLayer('heat')">Heatmap</button>
       <button class="map-toggle" id="map-toggle-route" onclick="toggleRouteBuilder()" style="border-color:#e0691a">Route builder</button>
-      <button class="map-toggle" id="map-toggle-surface" onclick="toggleSurfaceLayer()" style="border-color:#8b949e">Surface layer</button>
     </div>
     <div id="route-builder-panel" style="display:none;background:#161b22;border:1px solid #e0691a;border-radius:6px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
@@ -735,48 +725,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <div id="saved-routes-list"><div style="font-size:11px;color:#7d8590">Saved routes will appear here.</div></div>
       </div>
     </div>
-    <div id="surface-panel" style="display:none;background:#161b22;border:1px solid #8b949e;border-radius:6px;padding:12px 14px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div>
-            <div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Surface type</div>
-            <select id="surface-type" class="route-mode-pill" onchange="updateSurfaceDraftStatus()">
-              <option value="fresh">Fresh pavement</option>
-              <option value="good">Good road</option>
-              <option value="rough">Rough road</option>
-              <option value="avoid">Avoid</option>
-              <option value="gravel">Gravel / trail</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </div>
-          <div>
-            <div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Note</div>
-            <input id="surface-note" type="text" placeholder="e.g. repaved spring 2026, rough shoulder, gravel cut-through..." style="width:360px;max-width:70vw;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:12px;color:#e6edf3" />
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="map-toggle" onclick="saveSurfaceDraft()" style="font-size:11px;border-color:#3fb950">Save surface</button>
-          <button class="map-toggle" onclick="markCurrentRouteSurface()" style="font-size:11px;border-color:#e0691a">Mark current route</button>
-          <button class="map-toggle" onclick="clearSurfaceDraft()" style="font-size:11px">Clear draft</button>
-        </div>
-      </div>
-      <div id="surface-status" style="font-size:11px;color:#7d8590;margin-top:8px">Surface editor is on. Click road/trail points to draw a note, or mark the current planned route. Saved notes stay local to this browser.</div>
-      <div style="margin-top:8px">
-        <span class="surface-pill"><span class="surface-dot" style="background:#3fb950"></span>Fresh pavement</span>
-        <span class="surface-pill"><span class="surface-dot" style="background:#58a6ff"></span>Good road</span>
-        <span class="surface-pill"><span class="surface-dot" style="background:#d29922"></span>Rough road</span>
-        <span class="surface-pill"><span class="surface-dot" style="background:#f85149"></span>Avoid</span>
-        <span class="surface-pill"><span class="surface-dot" style="background:#8957e5"></span>Gravel/trail</span>
-        <span class="surface-pill"><span class="surface-dot" style="background:#8b949e"></span>Unknown</span>
-      </div>
-      <div style="border-top:1px solid #30363d;margin-top:10px;padding-top:10px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
-          <div style="font-size:12px;font-weight:600;color:#e6edf3">Saved surface notes</div>
-          <button class="map-toggle" onclick="renderSurfaceLayer()" style="font-size:11px">Refresh</button>
-        </div>
-        <div id="surface-notes-list"><div style="font-size:11px;color:#7d8590">No surface notes yet.</div></div>
-      </div>
-    </div>
     <div class="map-shell"><div id="eldorado-map"></div></div>
     <div class="map-legend">
       <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Tailwind 10+ mph</div>
@@ -788,33 +736,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="map-legend-item"><span class="map-swatch" style="background:#dc2626"></span>Run heatmap (darker = more runs)</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#e0691a"></span>Planned route</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Fresh pavement</div>
-      <div class="map-legend-item"><span class="map-swatch" style="background:#f85149"></span>Avoid / bad surface</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
-  </div>
-</div>
-
-<!-- ROUTES / GPX -->
-<div id="section-routes" class="section">
-  <div class="section-header"><h2>Route viewer</h2><p>Drop a GPX file to visualize elevation, distance, and key stats.</p></div>
-  <div class="route-drop" id="gpx-drop" ondrop="handleGpxDrop(event)" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" onclick="document.getElementById('gpx-file').click()">
-    <div style="font-size:32px;margin-bottom:8px">🗺️</div>
-    <div style="font-size:15px;font-weight:600;color:#e6edf3;margin-bottom:6px">Drop a GPX file here</div>
-    <div style="font-size:13px;color:#7d8590">Or click to browse. Export from Strava, Garmin Connect, or Komoot.</div>
-    <input type="file" id="gpx-file" accept=".gpx" style="display:none" onchange="handleGpxFile(event)" />
-  </div>
-  <div id="gpx-content" style="display:none">
-    <div class="g4" id="gpx-stats" style="margin-top:1.5rem"></div>
-    <div class="card">
-      <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Elevation profile</div></div>
-      <div class="chart-wrap chart-wrap-md"><canvas id="gpx-elevation-chart"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Route map</div></div>
-      <div id="gpx-map-wrap" style="height:320px">
-        <canvas id="gpx-map-canvas" style="width:100%;height:100%"></canvas>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -4872,8 +4795,8 @@ async function renderFullKomList() {
 
 // ==================== MAP ====================
 let eldoradoMap = null;
-let eldoradoMapLayers = { achievements: null, heat: null, route: null, surface: null };
-let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, surface:false, windDay:'today' };
+let eldoradoMapLayers = { achievements: null, heat: null, route: null };
+let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today' };
 let eldoradoMapBoundsFit = false; // only auto-fit map bounds once; subsequent renders preserve the user's zoom/pan
 
 // Put your URL-restricted Mapbox public token here for production, or paste it in Settings for local testing.
@@ -4930,7 +4853,6 @@ function initEldoradoMap() {
   addEldoradoBaseTiles();
   eldoradoMapLayers.achievements = L.layerGroup().addTo(eldoradoMap);
   eldoradoMapLayers.heat = L.layerGroup().addTo(eldoradoMap);
-  eldoradoMapLayers.surface = L.layerGroup().addTo(eldoradoMap);
   // Route layer sits above achievements so the planned route line is
   // always visible on top of KOM overlays.
   eldoradoMapLayers.route = L.layerGroup().addTo(eldoradoMap);
@@ -4973,211 +4895,6 @@ function setEldoradoMapWind(day) {
 // controlled because no public map source reliably knows "fresh tarmac" right
 // after a town repaves a road. Use this for Fresh pavement, Good road, Rough
 // road, Avoid, Gravel/trail, or Unknown notes.
-let surfaceEditorActive = false;
-let surfaceDraftPoints = [];
-let surfaceDraftLayer = null;
-let surfaceAnnotationLayers = [];
-const SURFACE_STORAGE_KEY = 'ed_surface_notes_v1';
-const SURFACE_COLORS = {
-  fresh: '#3fb950',
-  good: '#58a6ff',
-  rough: '#d29922',
-  avoid: '#f85149',
-  gravel: '#8957e5',
-  unknown: '#8b949e'
-};
-const SURFACE_LABELS = {
-  fresh: 'Fresh pavement',
-  good: 'Good road',
-  rough: 'Rough road',
-  avoid: 'Avoid',
-  gravel: 'Gravel / trail',
-  unknown: 'Unknown'
-};
-
-function toggleSurfaceLayer() {
-  eldoradoMapState.surface = !eldoradoMapState.surface;
-  surfaceEditorActive = eldoradoMapState.surface;
-  const btn = document.getElementById('map-toggle-surface');
-  const panel = document.getElementById('surface-panel');
-  if (btn) btn.classList.toggle('active', !!eldoradoMapState.surface);
-  if (panel) panel.style.display = eldoradoMapState.surface ? 'block' : 'none';
-  if (eldoradoMap && !routeBuilderActive) eldoradoMap.getContainer().style.cursor = surfaceEditorActive ? 'crosshair' : '';
-  renderSurfaceLayer();
-  updateSurfaceDraftStatus();
-}
-
-function getSurfaceType() {
-  const el = document.getElementById('surface-type');
-  return el ? el.value : 'unknown';
-}
-
-function getSurfaceNote() {
-  const el = document.getElementById('surface-note');
-  return el ? el.value.trim() : '';
-}
-
-function getSurfaceNotes() {
-  try { return JSON.parse(localStorage.getItem(SURFACE_STORAGE_KEY) || '[]'); }
-  catch(e) { return []; }
-}
-
-function saveSurfaceNotes(notes) {
-  localStorage.setItem(SURFACE_STORAGE_KEY, JSON.stringify(notes));
-}
-
-function surfaceColor(type) { return SURFACE_COLORS[type] || SURFACE_COLORS.unknown; }
-function surfaceLabel(type) { return SURFACE_LABELS[type] || SURFACE_LABELS.unknown; }
-
-function setSurfaceStatus(msg) {
-  const el = document.getElementById('surface-status');
-  if (el) el.textContent = msg;
-}
-
-function updateSurfaceDraftStatus() {
-  if (!eldoradoMapState.surface) return;
-  const type = surfaceLabel(getSurfaceType());
-  const pts = surfaceDraftPoints.length;
-  setSurfaceStatus(type + ' selected. Click map points to trace the road/trail section, then Save surface. Points in draft: ' + pts + '.');
-  renderSurfaceDraft();
-}
-
-function addSurfaceDraftPoint(latlng) {
-  surfaceDraftPoints.push([latlng.lat, latlng.lng]);
-  renderSurfaceDraft();
-  updateSurfaceDraftStatus();
-}
-
-function clearSurfaceDraft() {
-  surfaceDraftPoints = [];
-  const noteEl = document.getElementById('surface-note');
-  if (noteEl) noteEl.value = '';
-  renderSurfaceDraft();
-  updateSurfaceDraftStatus();
-}
-
-function renderSurfaceDraft() {
-  if (!eldoradoMapLayers.surface) return;
-  if (surfaceDraftLayer) {
-    try { eldoradoMapLayers.surface.removeLayer(surfaceDraftLayer); } catch(e) {}
-    surfaceDraftLayer = null;
-  }
-  if (!surfaceDraftPoints.length) return;
-  const color = surfaceColor(getSurfaceType());
-  if (surfaceDraftPoints.length === 1) {
-    surfaceDraftLayer = L.circleMarker(surfaceDraftPoints[0], { radius: 7, color:'#0d1117', fillColor:color, fillOpacity:1, weight:2 }).addTo(eldoradoMapLayers.surface);
-  } else {
-    surfaceDraftLayer = L.polyline(surfaceDraftPoints, { color: color, weight: 7, opacity: 0.9, dashArray: '4,5' }).addTo(eldoradoMapLayers.surface);
-  }
-}
-
-function saveSurfaceDraft() {
-  if (!surfaceDraftPoints.length) { setSurfaceStatus('Click at least one map point first, or use Mark current route.'); return; }
-  const notes = getSurfaceNotes();
-  const type = getSurfaceType();
-  const note = getSurfaceNote();
-  notes.unshift({
-    id: 'surface_' + Date.now(),
-    type: type,
-    note: note,
-    points: surfaceDraftPoints.slice(),
-    created_at: new Date().toISOString(),
-    source: 'manual'
-  });
-  saveSurfaceNotes(notes);
-  surfaceDraftPoints = [];
-  const noteEl = document.getElementById('surface-note');
-  if (noteEl) noteEl.value = '';
-  renderSurfaceLayer();
-  setSurfaceStatus('Saved ' + surfaceLabel(type) + ' note. It will appear whenever Surface layer is on.');
-}
-
-function markCurrentRouteSurface() {
-  const points = getRouteTrackPoints ? getRouteTrackPoints() : [];
-  if (!points.length) { setSurfaceStatus('Build or load a route first, then use Mark current route.'); return; }
-  const notes = getSurfaceNotes();
-  const type = getSurfaceType();
-  const note = getSurfaceNote() || ('Marked from planned route as ' + surfaceLabel(type));
-  notes.unshift({
-    id: 'surface_' + Date.now(),
-    type: type,
-    note: note,
-    points: points,
-    created_at: new Date().toISOString(),
-    source: 'route'
-  });
-  saveSurfaceNotes(notes);
-  renderSurfaceLayer();
-  setSurfaceStatus('Saved current route as ' + surfaceLabel(type) + '.');
-}
-
-function deleteSurfaceNote(id) {
-  const notes = getSurfaceNotes().filter(function(n){ return n.id !== id; });
-  saveSurfaceNotes(notes);
-  renderSurfaceLayer();
-}
-
-function zoomSurfaceNote(id) {
-  const note = getSurfaceNotes().find(function(n){ return n.id === id; });
-  if (!note || !note.points || !note.points.length || !eldoradoMap) return;
-  try {
-    if (note.points.length === 1) eldoradoMap.setView(note.points[0], 15);
-    else eldoradoMap.fitBounds(L.latLngBounds(note.points), { padding:[24,24], maxZoom:16 });
-  } catch(e) {}
-}
-
-function renderSurfaceLayer() {
-  if (!eldoradoMapLayers.surface) return;
-  // Preserve current draft while clearing saved annotation layers
-  surfaceAnnotationLayers.forEach(function(layer){ try { eldoradoMapLayers.surface.removeLayer(layer); } catch(e) {} });
-  surfaceAnnotationLayers = [];
-  const notes = getSurfaceNotes();
-  if (eldoradoMapState.surface) {
-    notes.forEach(function(n) {
-      if (!n.points || !n.points.length) return;
-      const color = surfaceColor(n.type);
-      const popup = '<div class="map-popup"><div class="map-popup-title">' + surfaceLabel(n.type) + '</div>' +
-        (n.note ? '<div>' + escapeHTML(n.note) + '</div>' : '') +
-        '<div style="color:#57606a;margin-top:4px">' + new Date(n.created_at).toLocaleDateString() + ' · ' + (n.source || 'manual') + '</div></div>';
-      let layer;
-      if (n.points.length === 1) {
-        layer = L.circleMarker(n.points[0], { radius: 7, color:'#0d1117', fillColor:color, fillOpacity:1, weight:2 }).bindPopup(popup);
-      } else {
-        layer = L.polyline(n.points, { color: color, weight: 7, opacity: 0.85 }).bindPopup(popup);
-      }
-      layer.addTo(eldoradoMapLayers.surface);
-      surfaceAnnotationLayers.push(layer);
-    });
-    renderSurfaceDraft();
-  }
-  renderSurfaceNotesList(notes);
-}
-
-function renderSurfaceNotesList(notes) {
-  const el = document.getElementById('surface-notes-list');
-  if (!el) return;
-  if (!notes.length) {
-    el.innerHTML = '<div style="font-size:11px;color:#7d8590">No surface notes yet. Turn on Surface layer, click along a road/trail, choose a condition, and save it.</div>';
-    return;
-  }
-  el.innerHTML = notes.slice(0, 20).map(function(n) {
-    const pts = n.points ? n.points.length : 0;
-    const miles = pts > 1 ? (pathDistanceMeters(n.points) / 1609.34).toFixed(2) + ' mi · ' : '';
-    return '<div class="surface-note-row">' +
-      '<div><div class="surface-note-title"><span class="surface-dot" style="background:' + surfaceColor(n.type) + ';margin-right:6px"></span>' + surfaceLabel(n.type) + '</div>' +
-      '<div class="surface-note-meta">' + escapeHTML(n.note || 'No note') + '</div>' +
-      '<div class="surface-note-meta">' + miles + pts + ' point' + (pts===1?'':'s') + ' · ' + new Date(n.created_at).toLocaleDateString() + '</div></div>' +
-      '<div style="display:flex;gap:6px"><button class="surface-mini-btn" onclick="zoomSurfaceNote(\'' + n.id + '\')">View</button><button class="surface-mini-btn" onclick="deleteSurfaceNote(\'' + n.id + '\')">Delete</button></div>' +
-      '</div>';
-  }).join('');
-}
-
-function pathDistanceMeters(points) {
-  let total = 0;
-  for (let i=1; i<points.length; i++) total += haversineMeters(points[i-1], points[i]);
-  return total;
-}
-
 // =========== ROUTE BUILDER ============================================
 // Turns the Map page into an interactive route planner. User clicks drop
 // waypoints; between each pair we call OSRM (the public demo server, free
@@ -5246,7 +4963,6 @@ function setRouteMode(mode) {
 }
 
 function onMapClickForRouteBuilder(e) {
-  if (surfaceEditorActive && !routeBuilderActive) { addSurfaceDraftPoint(e.latlng); return; }
   if (!routeBuilderActive) return;
   const wp = { lat: e.latlng.lat, lng: e.latlng.lng };
   routeWaypoints.push(wp);
