@@ -679,9 +679,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="map-toggle active" id="map-toggle-top10s" onclick="toggleEldoradoMapLayer('top10s')">Top 10s</button>
       <button class="map-toggle active" id="map-toggle-bike" onclick="toggleEldoradoMapLayer('bike')">Bike</button>
       <button class="map-toggle active" id="map-toggle-run" onclick="toggleEldoradoMapLayer('run')">Run</button>
-      <button class="map-toggle active" id="map-toggle-wind" onclick="toggleEldoradoMapLayer('wind')">Wind colors</button>
-      <button class="map-toggle active" id="map-toggle-today" onclick="setEldoradoMapWindDay('today')">Today</button>
-      <button class="map-toggle" id="map-toggle-tomorrow" onclick="setEldoradoMapWindDay('tomorrow')">Tomorrow</button>
+      <button class="map-toggle active" id="map-toggle-wind-today" onclick="setEldoradoMapWind('today')">Wind Today</button>
+      <button class="map-toggle" id="map-toggle-wind-tomorrow" onclick="setEldoradoMapWind('tomorrow')">Wind Tomorrow</button>
       <button class="map-toggle" id="map-toggle-heat" onclick="toggleEldoradoMapLayer('heat')">Heatmap</button>
     </div>
     <div class="map-shell"><div id="eldorado-map"></div></div>
@@ -691,8 +690,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="map-legend-item"><span class="map-swatch" style="background:#f0883e"></span>Headwind 0-9 mph</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#f85149"></span>Headwind 10+ mph</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#58a6ff"></span>No wind/geometry data</div>
-      <div class="map-legend-item"><span class="map-swatch" style="background:#00e5ff"></span>Ride heatmap (darker = more rides)</div>
-      <div class="map-legend-item"><span class="map-swatch" style="background:#ff7bff"></span>Run heatmap (darker = more runs)</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#000000"></span>Ride heatmap (darker = more rides)</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#dc2626"></span>Run heatmap (darker = more runs)</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
   </div>
@@ -3601,7 +3600,13 @@ function renderWeather(data) {
   if (charts['wxwind']) charts['wxwind'].destroy();
   const wxCtx = document.getElementById('wx-wind-chart').getContext('2d');
   const windSpeeds = daily.windspeed_10m_max.map(w => msToMph(w));
-  const wxLabels = daily.time.map((t,i) => i===0?'Today':days[new Date(t).getDay()]);
+  const wxLabels = daily.time.map(function(t, i) {
+    if (i === 0) return 'Today';
+    // Parse as local calendar date to avoid the UTC-midnight day-of-week
+    // drift that made tomorrow's label repeat today's day name.
+    const [y, m, dd] = t.split('-').map(Number);
+    return days[new Date(y, m - 1, dd).getDay()];
+  });
   charts['wxwind'] = new Chart(wxCtx, {
     type: 'bar',
     data: {
@@ -4772,6 +4777,7 @@ async function renderFullKomList() {
 let eldoradoMap = null;
 let eldoradoMapLayers = { achievements: null, heat: null };
 let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today' };
+let eldoradoMapBoundsFit = false; // only auto-fit map bounds once; subsequent renders preserve the user's zoom/pan
 
 // Put your URL-restricted Mapbox public token here for production, or paste it in Settings for local testing.
 // Public Mapbox tokens begin with "pk." and are safe to ship when URL-restricted in your Mapbox account.
@@ -4842,11 +4848,19 @@ function toggleEldoradoMapLayer(key) {
   renderEldoradoMap();
 }
 
-function setEldoradoMapWindDay(day) {
-  eldoradoMapState.windDay = day;
-  ['today','tomorrow'].forEach(function(d) {
-    const btn = document.getElementById('map-toggle-' + d);
-    if (btn) btn.classList.toggle('active', d === day);
+function setEldoradoMapWind(day) {
+  // Clicking the active day again turns wind coloring off. Clicking the
+  // inactive day switches to it and enables wind coloring. This gives us
+  // "off / today / tomorrow" states via just two buttons.
+  if (eldoradoMapState.wind && eldoradoMapState.windDay === day) {
+    eldoradoMapState.wind = false;
+  } else {
+    eldoradoMapState.wind = true;
+    eldoradoMapState.windDay = day;
+  }
+  ['today', 'tomorrow'].forEach(function(d) {
+    const btn = document.getElementById('map-toggle-wind-' + d);
+    if (btn) btn.classList.toggle('active', eldoradoMapState.wind && eldoradoMapState.windDay === d);
   });
   renderEldoradoMap();
 }
@@ -5023,10 +5037,10 @@ function renderHeatLayer() {
     pointCount += pts.length;
     // Low per-line opacity means a single ride shows up faint, but 10
     // rides on the same road stack toward opaque - that's the "darker
-    // where I go more" behavior. Bright cyan reads well over the
-    // OpenStreetMap tiles used underneath.
+    // where I go more" behavior. Black for bike stacks well against light
+    // OSM tiles; red for runs is intuitive and distinct.
     L.polyline(pts, {
-      color: sport === 'run' ? '#ff7bff' : '#00e5ff',
+      color: sport === 'run' ? '#dc2626' : '#000000',
       weight: 2,
       opacity: 0.08,
       lineJoin: 'round',
@@ -5100,16 +5114,22 @@ async function renderEldoradoMap() {
   });
 
   const heatStats = renderHeatLayer();
-  if (bounds.length) {
-    try { eldoradoMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 }); } catch(e) {}
-  } else if (heatStats.pointCount) {
-    const heatBounds = [];
-    allActivities.forEach(function(a) {
-      const poly = a.map && (a.map.summary_polyline || a.map.polyline);
-      const pts = decodePolyline(poly);
-      if (pts.length) { heatBounds.push(pts[0]); heatBounds.push(pts[pts.length-1]); }
-    });
-    if (heatBounds.length) eldoradoMap.fitBounds(heatBounds, { padding: [24, 24], maxZoom: 12 });
+  // Only auto-fit on the very first render. Otherwise toggling a layer off
+  // (e.g. hiding bike) would collapse the visible bounds and zoom out to
+  // wherever the remaining data is - including outlier trips halfway across
+  // the country - blowing away the zoom the user carefully set.
+  if (!eldoradoMapBoundsFit) {
+    if (bounds.length) {
+      try { eldoradoMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 }); eldoradoMapBoundsFit = true; } catch(e) {}
+    } else if (heatStats.pointCount) {
+      const heatBounds = [];
+      allActivities.forEach(function(a) {
+        const poly = a.map && (a.map.summary_polyline || a.map.polyline);
+        const pts = decodePolyline(poly);
+        if (pts.length) { heatBounds.push(pts[0]); heatBounds.push(pts[pts.length-1]); }
+      });
+      if (heatBounds.length) { eldoradoMap.fitBounds(heatBounds, { padding: [24, 24], maxZoom: 12 }); eldoradoMapBoundsFit = true; }
+    }
   }
 
   const countsEl = document.getElementById('map-counts');
