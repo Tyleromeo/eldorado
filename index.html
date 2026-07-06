@@ -700,7 +700,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Mode</div>
             <select id="route-mode" class="route-mode-pill" onchange="setRouteMode(this.value)">
               <option value="bike" selected>Bike</option>
-              <option value="foot">Run / Walk</option>
+              <option value="foot">Run / Walk — auto</option>
+              <option value="manual">Trail / Manual — no snap</option>
             </select>
           </div>
           <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Distance</div><div id="route-distance" style="font-size:16px;font-weight:600;color:#e0691a">0.0 mi</div></div>
@@ -715,7 +716,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
           <button class="map-toggle active" onclick="downloadRouteGPX()" style="font-size:11px;background:#e0691a;color:#0d1117;border-color:#e0691a">Download GPX</button>
         </div>
       </div>
-      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Choose Bike or Run/Walk, then click on the map to drop waypoints. Run/Walk uses foot routing so trails and pedestrian paths are more likely to work.</div>
+      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Choose Bike, Run/Walk auto, or Trail/Manual. Auto uses OSRM routing; Trail/Manual follows the exact trail points you click when the router will not snap to a path.</div>
       <div id="route-segments-list" style="font-size:11px;color:#7d8590;margin-top:8px"></div>
       <div style="border-top:1px solid #30363d;margin-top:10px;padding-top:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
@@ -4923,7 +4924,7 @@ function setEldoradoMapWind(day) {
 // deliberately does NOT try to push directly to Garmin - the user runs
 // the resulting GPX through Garmin Connect's Import Course flow.
 let routeBuilderActive = false;
-let routeMode = 'bike';       // OSRM profile: bike for rides, foot for runs/walks/trails
+let routeMode = 'bike';       // bike = OSRM bike, foot = OSRM foot, manual = direct trail/manual GPX points
 let routeWaypoints = [];      // [{lat, lng}] the user's clicked points
 let routeLegs = [];           // aligned with waypoints[i..i+1]: {points:[[lat,lng]...], distanceM, ascentM}
 let routeMarkers = [];        // Leaflet marker refs for waypoints
@@ -4949,7 +4950,7 @@ function toggleRouteBuilder() {
 
 
 function setRouteMode(mode) {
-  if (mode !== 'bike' && mode !== 'foot') mode = 'bike';
+  if (mode !== 'bike' && mode !== 'foot' && mode !== 'manual') mode = 'bike';
   if (routeWaypoints.length > 1 && mode !== routeMode) {
     if (!confirm('Switching route mode will clear the current planned route so it can be re-routed correctly. Continue?')) {
       const el = document.getElementById('route-mode');
@@ -4961,9 +4962,13 @@ function setRouteMode(mode) {
   routeMode = mode;
   const el = document.getElementById('route-mode');
   if (el) el.value = routeMode;
-  setRouteStatus(routeMode === 'foot'
-    ? 'Run/Walk mode: OSRM foot routing will use pedestrian paths and trails when available. Click on the map to start.'
-    : 'Bike mode: OSRM bike routing will favor bike-legal roads/paths. Click on the map to start.');
+  if (routeMode === 'manual') {
+    setRouteStatus('Trail/Manual mode: click directly along the trail. ElDorado will connect your clicked points exactly instead of snapping to roads. Use more points around turns.');
+  } else if (routeMode === 'foot') {
+    setRouteStatus('Run/Walk auto mode: OSRM foot routing will try pedestrian paths and trails, but some park trails may be missing from its routing graph. Use Trail/Manual if it skips a trail.');
+  } else {
+    setRouteStatus('Bike mode: OSRM bike routing will favor bike-legal roads/paths. Click on the map to start.');
+  }
 }
 
 function onMapClickForRouteBuilder(e) {
@@ -4993,24 +4998,36 @@ async function routeLeg(legIndex) {
   const a = routeWaypoints[legIndex];
   const b = routeWaypoints[legIndex + 1];
   if (!a || !b) return;
-  setRouteStatus('Routing leg ' + (legIndex + 1) + '...');
+  setRouteStatus(routeMode === 'manual' ? 'Drawing manual trail leg ' + (legIndex + 1) + '...' : 'Routing leg ' + (legIndex + 1) + '...');
   routeCalculating = true;
   try {
-    // OSRM public demo server. Bike mode uses the bike profile. Run/Walk mode
-    // uses the foot profile, which is much more likely to route through trails
-    // and pedestrian-only paths that bike routing will avoid.
-    // Fair use: only fires on deliberate user clicks so volume is low.
-    const profile = routeMode === 'foot' ? 'foot' : 'bike';
-    const url = 'https://router.project-osrm.org/route/v1/' + profile + '/' +
-      a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
-      '?overview=full&geometries=geojson';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('OSRM returned ' + resp.status);
-    const data = await resp.json();
-    if (!data.routes || !data.routes.length) throw new Error('No route found');
-    const coords = data.routes[0].geometry.coordinates; // [lng, lat] pairs
-    const points = coords.map(function(c){ return [c[1], c[0]]; }); // Leaflet uses [lat, lng]
-    const distanceM = data.routes[0].distance;
+    let points = [];
+    let distanceM = 0;
+
+    if (routeMode === 'manual') {
+      // Trail/manual mode does NOT call a road router. This is intentional:
+      // public routing engines often skip small park trails or unpaved paths.
+      // We connect the exact clicked trail points, then export those as GPX.
+      distanceM = haversineMeters([a.lat, a.lng], [b.lat, b.lng]);
+      points = interpolateManualLeg([a.lat, a.lng], [b.lat, b.lng], 25);
+    } else {
+      // OSRM public demo server. Bike mode uses the bike profile. Run/Walk auto
+      // uses the foot profile, which can route pedestrian paths/trails when its
+      // routing graph includes them. Some local trails still may be unavailable,
+      // which is what Trail/Manual mode is for.
+      // Fair use: only fires on deliberate user clicks so volume is low.
+      const profile = routeMode === 'foot' ? 'foot' : 'bike';
+      const url = 'https://router.project-osrm.org/route/v1/' + profile + '/' +
+        a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
+        '?overview=full&geometries=geojson';
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('OSRM returned ' + resp.status);
+      const data = await resp.json();
+      if (!data.routes || !data.routes.length) throw new Error('No route found');
+      const coords = data.routes[0].geometry.coordinates; // [lng, lat] pairs
+      points = coords.map(function(c){ return [c[1], c[0]]; }); // Leaflet uses [lat, lng]
+      distanceM = data.routes[0].distance;
+    }
 
     // Fetch elevations for these points via Open-Meteo elevation endpoint.
     // We downsample first - a full urban route can return hundreds of points
@@ -5027,12 +5044,14 @@ async function routeLeg(legIndex) {
       console.warn('Elevation lookup failed for leg:', e);
     }
 
-    routeLegs[legIndex] = { points, distanceM, ascentM };
+    routeLegs[legIndex] = { points, distanceM, ascentM, mode: routeMode };
     renderRoutePolyline();
     updateRouteStats();
-    setRouteStatus('Click on the map to add more waypoints, or download the GPX when done.');
+    setRouteStatus(routeMode === 'manual'
+      ? 'Manual trail leg added. Keep clicking along the trail to shape the GPX precisely.'
+      : 'Click on the map to add more waypoints, or download the GPX when done.');
   } catch (err) {
-    setRouteStatus('Routing failed: ' + err.message + '. Try a closer waypoint or try again.');
+    setRouteStatus('Routing failed: ' + err.message + '. Try a closer waypoint, or switch to Trail/Manual to draw the trail yourself.');
     // Remove the waypoint that failed to route so state stays consistent
     routeWaypoints.splice(legIndex + 1, 1);
     if (routeMarkers[legIndex + 1]) {
@@ -5052,6 +5071,20 @@ function downsampleForElevation(points, maxSamples) {
   if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
   return out;
 }
+function interpolateManualLeg(a, b, spacingMeters) {
+  const distance = haversineMeters(a, b);
+  const steps = Math.max(1, Math.ceil(distance / (spacingMeters || 25)));
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    pts.push([
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t
+    ]);
+  }
+  return pts;
+}
+
 
 async function fetchElevations(points) {
   // Open-Meteo elevation endpoint accepts up to 100 lat/lng pairs per call
@@ -5231,10 +5264,10 @@ async function findRouteSegmentsOnRoute() {
       // Match the route mode to relevant sport by default so run routes do not
       // get cluttered with bike-only segments and vice versa.
       const sport = sportGroupForType(entry.activity_type);
-      if (routeMode === 'foot') return sport === 'run';
+      if (routeMode === 'foot' || routeMode === 'manual') return sport === 'run';
       return sport === 'ride';
     });
-    const thresholdM = routeMode === 'foot' ? 35 : 45;
+    const thresholdM = (routeMode === 'foot' || routeMode === 'manual') ? 35 : 45;
     const matches = [];
     entries.forEach(function(entry) {
       const detail = result.enrichedCache[entry.segment_id];
@@ -5327,7 +5360,7 @@ async function renderSavedRoutes() {
     const mi = ((r.distanceM || 0) / 1609.34).toFixed(2);
     const ft = Math.round((r.ascentM || 0) * 3.281).toLocaleString();
     const created = r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-    const modeLabel = r.mode === 'foot' ? 'Run/Walk' : 'Bike';
+    const modeLabel = r.mode === 'bike' ? 'Bike' : (r.mode === 'manual' ? 'Trail/Manual' : 'Run/Walk');
     return '<div class="saved-route-card">' +
       '<div class="saved-route-name">' + escapeHTML(r.name || 'Saved route') + '</div>' +
       '<div class="saved-route-meta">' + modeLabel + ' · ' + mi + ' mi · ' + ft + ' ft gain · ' + (r.segmentCount || 0) + ' KOM/Top 10 segments' + (created ? ' · ' + created : '') + '</div>' +
@@ -5347,7 +5380,7 @@ async function saveCurrentRoute() {
     return;
   }
   const totals = getRouteTotals();
-  const defaultName = (routeMode === 'foot' ? 'Run route ' : 'Bike route ') + new Date().toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  const defaultName = (routeMode === 'bike' ? 'Bike route ' : (routeMode === 'manual' ? 'Trail run route ' : 'Run route ')) + new Date().toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const name = prompt('Route name:', defaultName);
   if (!name) return;
   const routes = await loadSavedRouteCollection();
@@ -5356,7 +5389,7 @@ async function saveCurrentRoute() {
     name: name,
     mode: routeMode,
     waypoints: routeWaypoints.map(function(w){ return { lat:w.lat, lng:w.lng }; }),
-    legs: routeLegs.map(function(l){ return l ? { points:l.points, distanceM:l.distanceM || 0, ascentM:l.ascentM || 0 } : null; }),
+    legs: routeLegs.map(function(l){ return l ? { points:l.points, distanceM:l.distanceM || 0, ascentM:l.ascentM || 0, mode:l.mode || routeMode } : null; }),
     distanceM: totals.distanceM,
     ascentM: totals.ascentM,
     segmentIds: routeSegmentsOnRoute.map(function(m){ return m.entry.segment_id; }),
@@ -5378,7 +5411,7 @@ async function loadSavedRoute(id) {
   const modeEl = document.getElementById('route-mode');
   if (modeEl) modeEl.value = routeMode;
   routeWaypoints = (r.waypoints || []).map(function(w){ return { lat:w.lat, lng:w.lng }; });
-  routeLegs = (r.legs || []).map(function(l){ return l ? { points:l.points || [], distanceM:l.distanceM || 0, ascentM:l.ascentM || 0 } : null; });
+  routeLegs = (r.legs || []).map(function(l){ return l ? { points:l.points || [], distanceM:l.distanceM || 0, ascentM:l.ascentM || 0, mode:l.mode || r.mode || 'bike' } : null; });
   routeWaypoints.forEach(function(wp, idx){ addWaypointMarker(wp, idx + 1); });
   renderRoutePolyline();
   updateRouteStats();
@@ -5447,8 +5480,8 @@ function downloadRouteGPX() {
     return;
   }
   const totals = getRouteTotals();
-  const routeName = 'ElDorado ' + (routeMode === 'foot' ? 'run' : 'bike') + ' route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const route = { name: routeName, legs: routeLegs, distanceM: totals.distanceM, ascentM: totals.ascentM };
+  const routeName = 'ElDorado ' + (routeMode === 'bike' ? 'bike' : (routeMode === 'manual' ? 'trail run' : 'run')) + ' route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const route = { name: routeName, mode: routeMode, legs: routeLegs, distanceM: totals.distanceM, ascentM: totals.ascentM };
   downloadGPXString(routeToGPX(route, routeName), 'eldorado-route-' + new Date().toISOString().slice(0, 10) + '.gpx');
   setRouteStatus('GPX downloaded. Import to Garmin Connect (Training → Courses → Import Course), then Send to Device.');
 }
