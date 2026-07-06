@@ -219,6 +219,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .leaflet-container { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
 .leaflet-tooltip.route-wp-tooltip { background: #e0691a; color: #0d1117; border: none; box-shadow: none; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
 .leaflet-tooltip.route-wp-tooltip::before { display: none; }
+.saved-route-card { background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+.saved-route-name { font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:3px; }
+.saved-route-meta { font-size:11px; color:#7d8590; line-height:1.45; }
+.route-mode-pill { background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:6px 8px; font-size:12px; }
+.route-segment-badge { display:inline-block; font-size:10px; font-weight:700; border-radius:4px; padding:1px 5px; margin-left:4px; }
+.route-seg-kom { background:#2d2000; color:#C9A227; border:1px solid #C9A227; }
+.route-seg-top10 { background:#1a2d3a; color:#58a6ff; border:1px solid #388bfd; }
 @media(max-width:720px){ #eldorado-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
 
 /* ROUTES / GPX */
@@ -689,17 +696,34 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div id="route-builder-panel" style="display:none;background:#161b22;border:1px solid #e0691a;border-radius:6px;padding:12px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
         <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Mode</div>
+            <select id="route-mode" class="route-mode-pill" onchange="setRouteMode(this.value)">
+              <option value="bike" selected>Bike</option>
+              <option value="foot">Run / Walk</option>
+            </select>
+          </div>
           <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Distance</div><div id="route-distance" style="font-size:16px;font-weight:600;color:#e0691a">0.0 mi</div></div>
           <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Elevation gain</div><div id="route-elevation" style="font-size:16px;font-weight:600;color:#e0691a">0 ft</div></div>
           <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Waypoints</div><div id="route-waypoints" style="font-size:16px;font-weight:600;color:#e0691a">0</div></div>
+          <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Segments on route</div><div id="route-segments-count" style="font-size:16px;font-weight:600;color:#C9A227">0</div></div>
         </div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="map-toggle" onclick="undoRouteWaypoint()" style="font-size:11px">Undo point</button>
           <button class="map-toggle" onclick="clearRoute()" style="font-size:11px">Clear</button>
+          <button class="map-toggle" onclick="saveCurrentRoute()" style="font-size:11px;border-color:#C9A227">Save route</button>
           <button class="map-toggle active" onclick="downloadRouteGPX()" style="font-size:11px;background:#e0691a;color:#0d1117;border-color:#e0691a">Download GPX</button>
         </div>
       </div>
-      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Click on the map to drop waypoints. Roads between them are auto-routed via OSRM. Import the GPX to Garmin Connect &rarr; Send to Device to ride it.</div>
+      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Choose Bike or Run/Walk, then click on the map to drop waypoints. Run/Walk uses foot routing so trails and pedestrian paths are more likely to work.</div>
+      <div id="route-segments-list" style="font-size:11px;color:#7d8590;margin-top:8px"></div>
+      <div style="border-top:1px solid #30363d;margin-top:10px;padding-top:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:600;color:#e6edf3">Saved routes</div>
+          <button class="map-toggle" onclick="renderSavedRoutes()" style="font-size:11px">Refresh</button>
+        </div>
+        <div id="saved-routes-list"><div style="font-size:11px;color:#7d8590">Saved routes will appear here.</div></div>
+      </div>
     </div>
     <div class="map-shell"><div id="eldorado-map"></div></div>
     <div class="map-legend">
@@ -4899,11 +4923,15 @@ function setEldoradoMapWind(day) {
 // deliberately does NOT try to push directly to Garmin - the user runs
 // the resulting GPX through Garmin Connect's Import Course flow.
 let routeBuilderActive = false;
+let routeMode = 'bike';       // OSRM profile: bike for rides, foot for runs/walks/trails
 let routeWaypoints = [];      // [{lat, lng}] the user's clicked points
 let routeLegs = [];           // aligned with waypoints[i..i+1]: {points:[[lat,lng]...], distanceM, ascentM}
 let routeMarkers = [];        // Leaflet marker refs for waypoints
 let routeLine = null;         // combined polyline
 let routeCalculating = false; // debounce for concurrent leg calls
+let routeSegmentHighlights = [];
+let routeSegmentsOnRoute = [];
+let savedRoutesCache = [];
 
 function toggleRouteBuilder() {
   routeBuilderActive = !routeBuilderActive;
@@ -4916,6 +4944,26 @@ function toggleRouteBuilder() {
     eldoradoMap.getContainer().style.cursor = routeBuilderActive ? 'crosshair' : '';
   }
   updateRouteStats();
+  renderSavedRoutes();
+}
+
+
+function setRouteMode(mode) {
+  if (mode !== 'bike' && mode !== 'foot') mode = 'bike';
+  if (routeWaypoints.length > 1 && mode !== routeMode) {
+    if (!confirm('Switching route mode will clear the current planned route so it can be re-routed correctly. Continue?')) {
+      const el = document.getElementById('route-mode');
+      if (el) el.value = routeMode;
+      return;
+    }
+    clearRoute();
+  }
+  routeMode = mode;
+  const el = document.getElementById('route-mode');
+  if (el) el.value = routeMode;
+  setRouteStatus(routeMode === 'foot'
+    ? 'Run/Walk mode: OSRM foot routing will use pedestrian paths and trails when available. Click on the map to start.'
+    : 'Bike mode: OSRM bike routing will favor bike-legal roads/paths. Click on the map to start.');
 }
 
 function onMapClickForRouteBuilder(e) {
@@ -4948,9 +4996,12 @@ async function routeLeg(legIndex) {
   setRouteStatus('Routing leg ' + (legIndex + 1) + '...');
   routeCalculating = true;
   try {
-    // OSRM public demo server. Cycling profile. Free, no key needed.
+    // OSRM public demo server. Bike mode uses the bike profile. Run/Walk mode
+    // uses the foot profile, which is much more likely to route through trails
+    // and pedestrian-only paths that bike routing will avoid.
     // Fair use: only fires on deliberate user clicks so volume is low.
-    const url = 'https://router.project-osrm.org/route/v1/cycling/' +
+    const profile = routeMode === 'foot' ? 'foot' : 'bike';
+    const url = 'https://router.project-osrm.org/route/v1/' + profile + '/' +
       a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
       '?overview=full&geometries=geojson';
     const resp = await fetch(url);
@@ -5026,6 +5077,7 @@ function renderRoutePolyline() {
     // Ensure waypoint markers stay above the line
     routeMarkers.forEach(function(m){ if (m.bringToFront) m.bringToFront(); });
   }
+  findRouteSegmentsOnRoute();
 }
 
 function updateRouteStats() {
@@ -5038,9 +5090,11 @@ function updateRouteStats() {
   const distEl = document.getElementById('route-distance');
   const elevEl = document.getElementById('route-elevation');
   const wpEl = document.getElementById('route-waypoints');
+  const segEl = document.getElementById('route-segments-count');
   if (distEl) distEl.textContent = (totalM / 1609.34).toFixed(2) + ' mi';
   if (elevEl) elevEl.textContent = Math.round(totalAscent * 3.281).toLocaleString() + ' ft';
   if (wpEl) wpEl.textContent = String(routeWaypoints.length);
+  if (segEl) segEl.textContent = String(routeSegmentsOnRoute.length || 0);
 }
 
 function setRouteStatus(msg) {
@@ -5065,31 +5119,294 @@ function clearRoute() {
   routeMarkers = [];
   if (eldoradoMapLayers.route) eldoradoMapLayers.route.clearLayers();
   routeLine = null;
+  routeSegmentHighlights = [];
+  routeSegmentsOnRoute = [];
   updateRouteStats();
+  renderRouteSegmentsList();
   setRouteStatus('Route cleared. Click on the map to start again.');
 }
 
-function downloadRouteGPX() {
-  if (routeWaypoints.length < 2 || !routeLegs.some(function(l){ return l && l.points && l.points.length; })) {
-    setRouteStatus('Add at least two waypoints before downloading.');
-    return;
-  }
-  // Assemble all leg points into one continuous track
+
+function getRouteTrackPoints() {
   const trackPoints = [];
   routeLegs.forEach(function(leg) {
     if (!leg || !leg.points) return;
     leg.points.forEach(function(p) {
-      // Avoid duplicating the last point of one leg with the first of the next
       const last = trackPoints[trackPoints.length - 1];
       if (last && last[0] === p[0] && last[1] === p[1]) return;
       trackPoints.push(p);
     });
   });
+  return trackPoints;
+}
+
+function getRouteTotals() {
+  let distanceM = 0, ascentM = 0;
+  routeLegs.forEach(function(leg) {
+    if (!leg) return;
+    distanceM += leg.distanceM || 0;
+    ascentM += leg.ascentM || 0;
+  });
+  return { distanceM, ascentM };
+}
+
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const lat1 = a[0] * Math.PI / 180, lat2 = b[0] * Math.PI / 180;
+  const dLat = (b[0] - a[0]) * Math.PI / 180;
+  const dLng = (b[1] - a[1]) * Math.PI / 180;
+  const x = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+function projectPointMeters(p, origin) {
+  const R = 6371000;
+  const lat0 = origin[0] * Math.PI / 180;
+  return {
+    x: (p[1] - origin[1]) * Math.PI / 180 * R * Math.cos(lat0),
+    y: (p[0] - origin[0]) * Math.PI / 180 * R
+  };
+}
+
+function distancePointToSegmentMeters(p, a, b) {
+  const origin = a;
+  const P = projectPointMeters(p, origin);
+  const A = projectPointMeters(a, origin);
+  const B = projectPointMeters(b, origin);
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const len2 = dx*dx + dy*dy;
+  if (!len2) return haversineMeters(p, a);
+  let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const C = { x: A.x + t*dx, y: A.y + t*dy };
+  const ddx = P.x - C.x, ddy = P.y - C.y;
+  return Math.sqrt(ddx*ddx + ddy*ddy);
+}
+
+function minDistancePointToPolylineMeters(point, line, stride) {
+  if (!line || line.length < 2) return Infinity;
+  const step = Math.max(1, stride || 1);
+  let best = Infinity;
+  for (let i = 0; i < line.length - 1; i += step) {
+    const d = distancePointToSegmentMeters(point, line[i], line[i+1]);
+    if (d < best) best = d;
+    if (best <= 20) break;
+  }
+  return best;
+}
+
+function minDistancePolylineToPolylineMeters(segPoints, routePoints, thresholdM) {
+  if (!segPoints || segPoints.length < 2 || !routePoints || routePoints.length < 2) return Infinity;
+  const segStride = Math.max(1, Math.ceil(segPoints.length / 20));
+  const routeStride = Math.max(1, Math.ceil(routePoints.length / 200));
+  let best = Infinity;
+  for (let i = 0; i < segPoints.length; i += segStride) {
+    const d = minDistancePointToPolylineMeters(segPoints[i], routePoints, routeStride);
+    if (d < best) best = d;
+    if (best <= thresholdM) return best;
+  }
+  // Always test endpoints even if stride skipped them
+  [segPoints[0], segPoints[segPoints.length - 1]].forEach(function(p) {
+    const d = minDistancePointToPolylineMeters(p, routePoints, routeStride);
+    if (d < best) best = d;
+  });
+  return best;
+}
+
+function clearRouteSegmentHighlights() {
+  routeSegmentHighlights.forEach(function(layer) {
+    try { eldoradoMapLayers.route.removeLayer(layer); } catch(e) {}
+  });
+  routeSegmentHighlights = [];
+}
+
+async function findRouteSegmentsOnRoute() {
+  clearRouteSegmentHighlights();
+  routeSegmentsOnRoute = [];
+  const routePoints = getRouteTrackPoints();
+  if (routePoints.length < 2 || !athleteData) { updateRouteStats(); renderRouteSegmentsList(); return; }
+  try {
+    const result = await getMapAchievementEntries();
+    const entries = result.entries.filter(function(entry) {
+      // Match the route mode to relevant sport by default so run routes do not
+      // get cluttered with bike-only segments and vice versa.
+      const sport = sportGroupForType(entry.activity_type);
+      if (routeMode === 'foot') return sport === 'run';
+      return sport === 'ride';
+    });
+    const thresholdM = routeMode === 'foot' ? 35 : 45;
+    const matches = [];
+    entries.forEach(function(entry) {
+      const detail = result.enrichedCache[entry.segment_id];
+      const points = pointsForMapEntry(entry, detail);
+      if (!points || points.length < 2) return;
+      const dist = minDistancePolylineToPolylineMeters(points, routePoints, thresholdM);
+      if (dist <= thresholdM) matches.push({ entry, detail, points, distanceFromRouteM: Math.round(dist) });
+    });
+    // Dedupe by segment id; prefer KOM over Top 10 if both appear.
+    const byId = {};
+    matches.forEach(function(m) {
+      const existing = byId[m.entry.segment_id];
+      if (!existing || (m.entry.kind === 'kom' && existing.entry.kind !== 'kom')) byId[m.entry.segment_id] = m;
+    });
+    routeSegmentsOnRoute = Object.values(byId).sort(function(a,b) {
+      if (a.entry.kind !== b.entry.kind) return a.entry.kind === 'kom' ? -1 : 1;
+      return (a.entry.segment_name || '').localeCompare(b.entry.segment_name || '');
+    });
+    routeSegmentsOnRoute.forEach(function(m) {
+      const color = m.entry.kind === 'kom' ? '#C9A227' : '#58a6ff';
+      const line = L.polyline(m.points, { color: color, weight: 6, opacity: 0.95, dashArray: m.entry.kind === 'kom' ? null : '6,4' }).addTo(eldoradoMapLayers.route);
+      line.bindPopup(popupForMapEntry(m.entry, m.detail, null) + '<div style="margin-top:6px;font-size:11px;color:#7d8590">On planned route · about ' + m.distanceFromRouteM + 'm from route line</div>');
+      routeSegmentHighlights.push(line);
+    });
+  } catch(e) {
+    console.warn('Route segment matching failed:', e);
+  }
+  updateRouteStats();
+  renderRouteSegmentsList();
+}
+
+function renderRouteSegmentsList() {
+  const el = document.getElementById('route-segments-list');
+  if (!el) return;
+  if (!routeSegmentsOnRoute.length) {
+    el.innerHTML = routeLine ? 'No cached KOM/Top 10 segments detected along this route yet. Enrich segments in the Segments tab for better coverage.' : '';
+    return;
+  }
+  const koms = routeSegmentsOnRoute.filter(function(m){ return m.entry.kind === 'kom'; }).length;
+  const top10s = routeSegmentsOnRoute.length - koms;
+  el.innerHTML = '<div style="margin-bottom:6px"><strong style="color:#e6edf3">Segments along route:</strong> ' +
+    (koms ? '<span class="route-segment-badge route-seg-kom">' + koms + ' KOM</span>' : '') +
+    (top10s ? '<span class="route-segment-badge route-seg-top10">' + top10s + ' Top 10</span>' : '') +
+    '</div>' +
+    routeSegmentsOnRoute.slice(0, 12).map(function(m) {
+      const cls = m.entry.kind === 'kom' ? 'route-seg-kom' : 'route-seg-top10';
+      const label = m.entry.kind === 'kom' ? 'KOM' : 'Top 10 #' + m.entry.rank;
+      return '<div style="padding:3px 0;border-bottom:1px solid #21262d"><span class="route-segment-badge ' + cls + '">' + label + '</span> ' + escapeHTML(m.entry.segment_name || 'Segment') + '</div>';
+    }).join('') +
+    (routeSegmentsOnRoute.length > 12 ? '<div style="padding-top:4px">+' + (routeSegmentsOnRoute.length - 12) + ' more</div>' : '');
+}
+
+function escapeHTML(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function saveRouteCollection(routes) {
+  savedRoutesCache = routes || [];
+  const payload = savedRoutesCache;
+  try {
+    if (athleteData && athleteData.id) await setCached(athleteData.id, 'saved_routes_v1', payload);
+    localStorage.setItem('ed_saved_routes_v1', JSON.stringify(payload));
+  } catch(e) {
+    console.warn('Save routes failed:', e);
+    localStorage.setItem('ed_saved_routes_v1', JSON.stringify(payload));
+  }
+}
+
+async function loadSavedRouteCollection() {
+  try {
+    if (athleteData && athleteData.id) {
+      const remote = await getCached(athleteData.id, 'saved_routes_v1', 3650*24*60*60*1000);
+      if (Array.isArray(remote)) { savedRoutesCache = remote; return remote; }
+    }
+  } catch(e) {}
+  try { savedRoutesCache = JSON.parse(localStorage.getItem('ed_saved_routes_v1') || '[]'); }
+  catch(e) { savedRoutesCache = []; }
+  return savedRoutesCache;
+}
+
+async function renderSavedRoutes() {
+  const el = document.getElementById('saved-routes-list');
+  if (!el) return;
+  const routes = await loadSavedRouteCollection();
+  if (!routes.length) {
+    el.innerHTML = '<div style="font-size:11px;color:#7d8590">No saved routes yet. Build a route, then click Save route.</div>';
+    return;
+  }
+  el.innerHTML = routes.slice().reverse().map(function(r) {
+    const mi = ((r.distanceM || 0) / 1609.34).toFixed(2);
+    const ft = Math.round((r.ascentM || 0) * 3.281).toLocaleString();
+    const created = r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    const modeLabel = r.mode === 'foot' ? 'Run/Walk' : 'Bike';
+    return '<div class="saved-route-card">' +
+      '<div class="saved-route-name">' + escapeHTML(r.name || 'Saved route') + '</div>' +
+      '<div class="saved-route-meta">' + modeLabel + ' · ' + mi + ' mi · ' + ft + ' ft gain · ' + (r.segmentCount || 0) + ' KOM/Top 10 segments' + (created ? ' · ' + created : '') + '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="map-toggle" onclick="loadSavedRoute(\'' + r.id + '\')" style="font-size:11px">Load</button>' +
+        '<button class="map-toggle" onclick="downloadSavedRouteGPX(\'' + r.id + '\')" style="font-size:11px">GPX</button>' +
+        '<button class="map-toggle" onclick="deleteSavedRoute(\'' + r.id + '\')" style="font-size:11px;color:#f85149;border-color:#f85149">Delete</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function saveCurrentRoute() {
+  const trackPoints = getRouteTrackPoints();
+  if (routeWaypoints.length < 2 || trackPoints.length < 2) {
+    setRouteStatus('Build a route with at least two waypoints before saving.');
+    return;
+  }
+  const totals = getRouteTotals();
+  const defaultName = (routeMode === 'foot' ? 'Run route ' : 'Bike route ') + new Date().toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  const name = prompt('Route name:', defaultName);
+  if (!name) return;
+  const routes = await loadSavedRouteCollection();
+  const route = {
+    id: 'rt_' + Date.now(),
+    name: name,
+    mode: routeMode,
+    waypoints: routeWaypoints.map(function(w){ return { lat:w.lat, lng:w.lng }; }),
+    legs: routeLegs.map(function(l){ return l ? { points:l.points, distanceM:l.distanceM || 0, ascentM:l.ascentM || 0 } : null; }),
+    distanceM: totals.distanceM,
+    ascentM: totals.ascentM,
+    segmentIds: routeSegmentsOnRoute.map(function(m){ return m.entry.segment_id; }),
+    segmentCount: routeSegmentsOnRoute.length,
+    created_at: new Date().toISOString()
+  };
+  routes.push(route);
+  await saveRouteCollection(routes);
+  renderSavedRoutes();
+  setRouteStatus('Saved route: ' + name);
+}
+
+async function loadSavedRoute(id) {
+  const routes = await loadSavedRouteCollection();
+  const r = routes.find(function(x){ return x.id === id; });
+  if (!r) return;
+  clearRoute();
+  routeMode = r.mode || 'bike';
+  const modeEl = document.getElementById('route-mode');
+  if (modeEl) modeEl.value = routeMode;
+  routeWaypoints = (r.waypoints || []).map(function(w){ return { lat:w.lat, lng:w.lng }; });
+  routeLegs = (r.legs || []).map(function(l){ return l ? { points:l.points || [], distanceM:l.distanceM || 0, ascentM:l.ascentM || 0 } : null; });
+  routeWaypoints.forEach(function(wp, idx){ addWaypointMarker(wp, idx + 1); });
+  renderRoutePolyline();
+  updateRouteStats();
+  setRouteStatus('Loaded saved route: ' + (r.name || 'Saved route'));
+  if (routeLine && eldoradoMap) { try { eldoradoMap.fitBounds(routeLine.getBounds(), { padding:[24,24], maxZoom:14 }); } catch(e) {} }
+}
+
+async function deleteSavedRoute(id) {
+  const routes = await loadSavedRouteCollection();
+  const r = routes.find(function(x){ return x.id === id; });
+  if (!confirm('Delete saved route "' + (r ? r.name : 'this route') + '"?')) return;
+  await saveRouteCollection(routes.filter(function(x){ return x.id !== id; }));
+  renderSavedRoutes();
+}
+
+function routeToGPX(route, nameOverride) {
+  const points = [];
+  (route.legs || []).forEach(function(leg) {
+    if (!leg || !leg.points) return;
+    leg.points.forEach(function(p) {
+      const last = points[points.length - 1];
+      if (last && last[0] === p[0] && last[1] === p[1]) return;
+      points.push(p);
+    });
+  });
   const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-  const routeName = 'ElDorado route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  // Standard GPX 1.1 - Garmin Connect Import Course accepts this format
-  const gpx =
-    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+  const routeName = nameOverride || route.name || 'ElDorado route';
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<gpx version="1.1" creator="ElDorado Training Intelligence" xmlns="http://www.topografix.com/GPX/1/1">\n' +
     '  <metadata>\n' +
     '    <name>' + escapeXML(routeName) + '</name>\n' +
@@ -5098,22 +5415,42 @@ function downloadRouteGPX() {
     '  <trk>\n' +
     '    <name>' + escapeXML(routeName) + '</name>\n' +
     '    <trkseg>\n' +
-    trackPoints.map(function(p) {
-      return '      <trkpt lat="' + p[0].toFixed(6) + '" lon="' + p[1].toFixed(6) + '"></trkpt>\n';
-    }).join('') +
+    points.map(function(p) { return '      <trkpt lat="' + p[0].toFixed(6) + '" lon="' + p[1].toFixed(6) + '"></trkpt>\n'; }).join('') +
     '    </trkseg>\n' +
     '  </trk>\n' +
     '</gpx>\n';
+}
+
+function downloadGPXString(gpx, filename) {
   const blob = new Blob([gpx], { type: 'application/gpx+xml' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'eldorado-route-' + new Date().toISOString().slice(0, 10) + '.gpx';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  setRouteStatus('GPX downloaded. Import to Garmin Connect (Training \u2192 Courses \u2192 Import Course), then Send to Device.');
+}
+
+async function downloadSavedRouteGPX(id) {
+  const routes = await loadSavedRouteCollection();
+  const r = routes.find(function(x){ return x.id === id; });
+  if (!r) return;
+  downloadGPXString(routeToGPX(r), (r.name || 'eldorado-route').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') + '.gpx');
+}
+
+function downloadRouteGPX() {
+  const trackPoints = getRouteTrackPoints();
+  if (routeWaypoints.length < 2 || trackPoints.length < 2) {
+    setRouteStatus('Add at least two waypoints before downloading.');
+    return;
+  }
+  const totals = getRouteTotals();
+  const routeName = 'ElDorado ' + (routeMode === 'foot' ? 'run' : 'bike') + ' route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const route = { name: routeName, legs: routeLegs, distanceM: totals.distanceM, ascentM: totals.ascentM };
+  downloadGPXString(routeToGPX(route, routeName), 'eldorado-route-' + new Date().toISOString().slice(0, 10) + '.gpx');
+  setRouteStatus('GPX downloaded. Import to Garmin Connect (Training → Courses → Import Course), then Send to Device.');
 }
 
 function escapeXML(s) {
