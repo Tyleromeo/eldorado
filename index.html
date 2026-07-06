@@ -691,6 +691,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="map-legend-item"><span class="map-swatch" style="background:#f0883e"></span>Headwind 0-9 mph</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#f85149"></span>Headwind 10+ mph</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#58a6ff"></span>No wind/geometry data</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#00e5ff"></span>Ride heatmap (darker = more rides)</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#ff7bff"></span>Run heatmap (darker = more runs)</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
   </div>
@@ -4948,6 +4950,20 @@ function pointsForMapEntry(entry, detail) {
   return [];
 }
 
+// Approximate location fallback for entries whose segment hasn't been
+// enriched yet. Pulls a midpoint from the activity polyline where the KOM
+// was earned - not the exact segment location, but close enough to render a
+// marker so partially-scanned users still see their achievements on the map.
+function approximatePointForEntry(entry) {
+  if (!entry.activity_id) return null;
+  const activity = allActivities.find(function(a){ return a.id === entry.activity_id; });
+  if (!activity || !activity.map) return null;
+  const poly = activity.map.summary_polyline || activity.map.polyline;
+  const pts = decodePolyline(poly);
+  if (!pts.length) return null;
+  return pts[Math.floor(pts.length / 2)];
+}
+
 function isMapEntryVisible(entry) {
   const sport = sportGroupForType(entry.activity_type);
   const sportOK = (sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run);
@@ -4986,8 +5002,17 @@ function renderHeatLayer() {
   if (!eldoradoMap || !eldoradoMapLayers.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
   eldoradoMapLayers.heat.clearLayers();
   if (!eldoradoMapState.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
-  const points = [];
-  let activityCount = 0, missing = 0;
+
+  // Road-style heatmap: draw each activity polyline as a semi-transparent
+  // line. Where multiple activities overlap the same road, the alpha
+  // compositing stacks up and the road naturally darkens - showing the
+  // paths you actually ride/run rather than a blurry blob. This is what
+  // Strava's own heatmap does and is what road cyclists actually want
+  // (which roads have I ridden, and how often).
+  let activityCount = 0, missing = 0, pointCount = 0;
+  const anySport = !!(eldoradoMapState.bike || eldoradoMapState.run);
+  if (!anySport) return { activityCount: 0, pointCount: 0, missing: 0 };
+
   allActivities.forEach(function(a) {
     const sport = sportGroupForType(a.type);
     if (!((sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run))) return;
@@ -4995,20 +5020,44 @@ function renderHeatLayer() {
     const pts = decodePolyline(poly);
     if (!pts.length) { missing++; return; }
     activityCount++;
-    pts.forEach(function(p, i) {
-      if (i % 3 === 0) points.push([p[0], p[1], 0.45]);
-    });
+    pointCount += pts.length;
+    // Low per-line opacity means a single ride shows up faint, but 10
+    // rides on the same road stack toward opaque - that's the "darker
+    // where I go more" behavior. Bright cyan reads well over the
+    // OpenStreetMap tiles used underneath.
+    L.polyline(pts, {
+      color: sport === 'run' ? '#ff7bff' : '#00e5ff',
+      weight: 2,
+      opacity: 0.08,
+      lineJoin: 'round',
+      interactive: false // don't intercept clicks - achievement lines above should stay clickable
+    }).addTo(eldoradoMapLayers.heat);
   });
-  if (points.length && L.heatLayer) {
-    L.heatLayer(points, { radius: 12, blur: 18, maxZoom: 15 }).addTo(eldoradoMapLayers.heat);
-  }
-  return { activityCount, pointCount: points.length, missing };
+
+  return { activityCount, pointCount, missing };
 }
 
 async function renderEldoradoMap() {
   initEldoradoMap();
   if (!eldoradoMap || !eldoradoMapLayers.achievements) return;
-  if (!weatherLoaded && !window._wxData) { weatherLoaded = true; loadWeather().then(function(){ renderEldoradoMap(); }).catch(function(){}); }
+
+  // Wait for weather data before drawing so wind colors are actually
+  // applied on the first render. The prior fire-and-forget approach set
+  // weatherLoaded=true synchronously, meaning if the user opened the Map
+  // before the weather fetch completed there was no re-render trigger and
+  // wind colors silently stayed off until the user manually toggled
+  // something.
+  if (!window._wxData) {
+    try {
+      weatherLoaded = true;
+      await loadWeather();
+    } catch (e) {
+      // If weather fails, we still want to draw the achievements - just
+      // without wind colors. Log for debugging but don't block the map.
+      console.warn('Weather unavailable for map wind coloring:', e);
+    }
+  }
+
   eldoradoMapLayers.achievements.clearLayers();
 
   const result = await getMapAchievementEntries();
@@ -5019,7 +5068,27 @@ async function renderEldoradoMap() {
   entries.forEach(function(entry) {
     const detail = result.enrichedCache[entry.segment_id];
     const points = pointsForMapEntry(entry, detail);
-    if (points.length < 2) { missingGeometry++; return; }
+    if (points.length < 2) {
+      // Segment isn't enriched yet, but we can still show an approximate
+      // marker at the activity's midpoint so users see their KOM exists
+      // on the map even during a partial scan.
+      const approx = approximatePointForEntry(entry);
+      if (approx) {
+        const wind = null; // no segment geometry, no bearing, no wind advantage
+        const color = entry.kind === 'kom' ? '#C9A227' : '#58a6ff';
+        const marker = L.circleMarker(approx, {
+          radius: entry.kind === 'kom' ? 7 : 5,
+          color: color, fillColor: color,
+          weight: 2, opacity: 0.9, fillOpacity: 0.6
+        }).addTo(eldoradoMapLayers.achievements);
+        marker.bindPopup(popupForMapEntry(entry, detail, wind) + '<div style="margin-top:6px;font-size:11px;color:#7d8590">Approximate location — enrich this segment for exact geometry.</div>');
+        bounds.push(approx);
+        drawn++;
+        return;
+      }
+      missingGeometry++;
+      return;
+    }
     const wind = windForLine(points);
     const color = mapColorForEntry(entry, points);
     const weight = entry.kind === 'kom' ? 5 : 4;
@@ -5047,12 +5116,20 @@ async function renderEldoradoMap() {
   if (countsEl) countsEl.textContent = drawn + ' mapped segments' + (eldoradoMapState.heat ? ' · ' + heatStats.activityCount + ' heatmap activities' : '');
 
   let status = '';
+  const hasWindData = !!window._wxData;
   if (!athleteData) status = 'Connect Strava first, then this map will draw from your loaded activity and segment data.';
   else if (!result.entries.length) status = 'No KOM or Top 10 scan data found yet. Go to Segments and run the full scan to populate this map.';
-  else if (drawn === 0) status = 'Your KOM/Top 10 list exists, but segment geometry is not cached yet. Go to Segments and run/enrich the scan again so the map can save start/end coordinates and polylines.';
-  else status = 'Showing ' + drawn + ' KOM/Top 10 segment' + (drawn === 1 ? '' : 's') + ' colored by ' + (eldoradoMapState.wind ? (eldoradoMapState.windDay === 'today' ? 'today\'s' : 'tomorrow\'s') + ' wind advantage.' : 'achievement type.') + (missingGeometry ? ' ' + missingGeometry + ' segment' + (missingGeometry === 1 ? ' is' : 's are') + ' missing geometry until re-enriched.' : '');
+  else if (drawn === 0) status = 'Your KOM/Top 10 list exists, but no segment geometry or activity polylines are available yet. Enrich segments in the Segments tab so exact geometry can be shown.';
+  else {
+    let mode;
+    if (eldoradoMapState.wind && hasWindData) mode = (eldoradoMapState.windDay === 'today' ? "today's" : "tomorrow's") + ' wind advantage';
+    else if (eldoradoMapState.wind && !hasWindData) mode = 'achievement type (wind forecast unavailable — visit the Weather tab and reload)';
+    else mode = 'achievement type';
+    status = 'Showing ' + drawn + ' KOM/Top 10 segment' + (drawn === 1 ? '' : 's') + ' colored by ' + mode + '.';
+    if (missingGeometry) status += ' ' + missingGeometry + ' segment' + (missingGeometry === 1 ? ' is' : 's are') + ' missing geometry entirely - enrich in the Segments tab to add them.';
+  }
   if (eldoradoMapState.heat) {
-    status += ' Heatmap uses activity polylines available in the current Strava load; cached activities without polylines will not draw until geometry is saved.';
+    status += ' Road heatmap: darker roads mean more rides/runs on them; light traces are places you visited once.';
   }
   setMapStatus(status);
   setTimeout(function(){ if (eldoradoMap) eldoradoMap.invalidateSize(); }, 50);
