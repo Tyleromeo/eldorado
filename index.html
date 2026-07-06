@@ -265,7 +265,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="nav-btn" onclick="showSection('weather')">Weather</button>
       <button class="nav-btn" onclick="showSection('goals')">Goals</button>
       <button class="nav-btn" onclick="showSection('zones')">Zones</button>
-      <button class="nav-btn" onclick="showSection('segments2')">Segments+</button>
       <button class="nav-btn" onclick="showSection('routes')">Routes</button>
       <button class="nav-btn" onclick="showSection('settings')">Settings</button>
     </div>
@@ -504,6 +503,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="section-header"><h2>Weather forecast</h2><p>7-day outlook for Smithtown, NY with wind analysis for ride planning.</p></div>
   <div id="wx-loading" style="font-size:13px;color:#7d8590;padding:1rem 0">Loading forecast...</div>
   <div id="wx-content" style="display:none">
+    <div id="wx-alerts" style="margin-bottom:1rem"></div>
     <div class="wx-grid" id="wx-days"></div>
     <div class="g2">
       <div class="card" style="margin-bottom:0">
@@ -665,20 +665,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div id="zone-breakdown"></div>
   </div>
 </div>
-
-<!-- SEGMENTS+ -->
-<div id="section-segments2" class="section">
-  <div class="section-header"><h2>Segments+</h2><p>Your starred segments with age group rankings (35-44).</p></div>
-  <div id="starred-loading" style="font-size:13px;color:#7d8590;padding:1rem 0">Loading starred segments...</div>
-  <div id="starred-content" style="display:none">
-    <div class="g3" id="seg-totals2"></div>
-    <div class="card">
-      <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>Starred segments — age group 35-44</div></div>
-      <div id="starred-list"></div>
-    </div>
-  </div>
-</div>
-
 
 <!-- MAP -->
 <div id="section-map" class="section">
@@ -1134,7 +1120,6 @@ function showSection(name) {
   if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); } catch(e) { console.error('renderMap:', e); } }, 80); }
   if (name === 'goals') { try { renderGoals(); } catch(e) { console.error('renderGoals:', e); } }
   if (name === 'zones') { try { renderZones(); } catch(e) { console.error('renderZones:', e); } }
-  if (name === 'segments2') { try { loadStarredSegments(); } catch(e) { console.error('loadStarredSegments:', e); } }
   if (name === 'settings') { try { loadSettingsUI(); } catch(e) { console.error('loadSettingsUI:', e); } }
   if (name === 'activities' && allActivities.length) { try { renderActivities(); } catch(e) { console.error('renderActivities:', e); } }
   if (name === 'gear' && allActivities.length) { try { renderGear(); } catch(e) { console.error('renderGear:', e); } }
@@ -3205,77 +3190,6 @@ function renderZoneBreakdown() {
   zbEl.innerHTML = html;
 }
 
-// ==================== STARRED SEGMENTS ====================
-let starredLoaded = false;
-
-async function loadStarredSegments() {
-  if (starredLoaded) return;
-  starredLoaded = true;
-  const token = await getToken();
-  if (!token) return;
-  const headers = {Authorization:'Bearer '+token};
-  const s = getSettings();
-  const loadingEl = document.getElementById('starred-loading');
-  const contentEl = document.getElementById('starred-content');
-
-  try {
-    const cacheKey = 'starred_segments';
-    const cached = await getCached(athleteData ? athleteData.id : null, cacheKey, 4*60*60*1000);
-    let starred, withRankings;
-
-    if (cached) {
-      starred = cached.starred;
-      withRankings = cached.withRankings;
-    } else {
-      starred = await fetch('https://www.strava.com/api/v3/segments/starred?per_page=50', {headers}).then(r=>r.json());
-      if (!Array.isArray(starred)||!starred.length) {
-        if (loadingEl) loadingEl.textContent='No starred segments found. Star segments on Strava first.';
-        return;
-      }
-
-      withRankings = [];
-      for (const seg of starred.slice(0,10)) {
-        try {
-          const lb = await fetch('https://www.strava.com/api/v3/segments/'+seg.id+'/leaderboard?age_group='+s.ageGroup+'&per_page=10',{headers}).then(r=>r.json());
-          withRankings.push({seg,lb});
-        } catch(e) { withRankings.push({seg,lb:null}); }
-      }
-
-      if (athleteData && athleteData.id) setCached(athleteData.id, cacheKey, {starred, withRankings});
-    }
-
-    if (!Array.isArray(starred)||!starred.length) {
-      if (loadingEl) loadingEl.textContent='No starred segments found. Star segments on Strava first.';
-      return;
-    }
-    if (loadingEl) loadingEl.style.display='none';
-    if (contentEl) contentEl.style.display='block';
-
-    const withKom = withRankings.filter(({lb})=>lb&&lb.entries&&lb.entries[0]&&lb.entries[0].rank===1).length;
-    const totalsEl = document.getElementById('seg-totals2');
-    if (totalsEl) totalsEl.innerHTML =
-      '<div class="metric"><div class="metric-label">Starred segments</div><div class="metric-val">'+starred.length+'</div><div class="metric-sub">total starred</div></div>'+
-      '<div class="metric"><div class="metric-label">Age group KOMs</div><div class="metric-val" style="color:#C9A227">'+withKom+'</div><div class="metric-sub">35-44 age group</div></div>'+
-      '<div class="metric"><div class="metric-label">Checked</div><div class="metric-val">'+withRankings.length+'</div><div class="metric-sub">of '+starred.length+'</div></div>';
-
-    const listEl = document.getElementById('starred-list');
-    if (listEl) listEl.innerHTML = withRankings.map(({seg,lb}) => {
-      const mi = (seg.distance/1609.34).toFixed(1);
-      const elev = seg.total_elevation_gain ? Math.round(seg.total_elevation_gain*3.281)+' ft' : '';
-      let rankBadge = '<span class="badge" style="background:#21262d;color:#7d8590">No data</span>';
-      let rankInfo = '';
-      if (lb&&lb.entries&&lb.entries.length) {
-        const e = lb.entries[0];
-        rankBadge = e.rank===1 ? '<span class="age-badge">Age KOM</span>' : '<span class="badge b-blue">#'+e.rank+' / '+lb.entry_count+'</span>';
-        const t = e.elapsed_time;
-        rankInfo = Math.floor(t/60)+':'+(t%60<10?'0':'')+(t%60);
-      }
-      return '<div class="seg-row"><div><div class="seg-name"><a href="https://www.strava.com/segments/'+seg.id+'" target="_blank" style="color:#e6edf3;text-decoration:none">'+seg.name+'</a></div><div class="seg-meta">'+mi+' mi'+(elev?' &middot; '+elev:'')+(rankInfo?' &middot; '+rankInfo:'')+'</div></div>'+rankBadge+'</div>';
-    }).join('');
-  } catch(e) {
-    if (loadingEl) loadingEl.textContent='Error loading segments: '+e.message;
-  }
-}
 
 // ==================== TOAST ====================
 function showToast(icon, title, body, duration) {
@@ -3520,9 +3434,74 @@ async function loadWeather() {
   }
 }
 
+// Fetches active NWS (National Weather Service) alerts for the user's
+// coordinates and renders them above the forecast. NWS is the authoritative
+// source for US watches/warnings/advisories (wind, thunderstorm, flood, air
+// quality, heat, etc.) - exactly the ride-planning context that a raw
+// forecast can miss. Open-Meteo doesn't provide alerts, but api.weather.gov
+// is free, no auth required, and updates as advisories are issued.
+async function fetchAndRenderWxAlerts() {
+  const el = document.getElementById('wx-alerts');
+  if (!el) return;
+  try {
+    const resp = await fetch(`https://api.weather.gov/alerts/active?point=${WX_LAT},${WX_LON}`, {
+      headers: { 'User-Agent': 'ElDorado Training Intelligence Dashboard' }
+    });
+    if (!resp.ok) { el.innerHTML = ''; return; }
+    const data = await resp.json();
+    const alerts = (data.features || []).map(f => f.properties).filter(Boolean);
+    if (!alerts.length) { el.innerHTML = ''; return; }
+
+    // Severity-based colors: Extreme/Severe get red, Moderate gets amber,
+    // Minor/Unknown get muted blue-grey so a routine air quality note doesn't
+    // look as alarming as a tornado warning.
+    function severityStyle(sev) {
+      if (sev === 'Extreme' || sev === 'Severe') return { bg: '#2d1a1a', border: '#f85149', icon: '#f85149' };
+      if (sev === 'Moderate') return { bg: '#2d2410', border: '#d29922', icon: '#d29922' };
+      return { bg: '#161b22', border: '#30363d', icon: '#58a6ff' };
+    }
+
+    el.innerHTML = alerts.map(a => {
+      const style = severityStyle(a.severity);
+      const headline = a.headline || a.event || 'Weather advisory';
+      const endsTime = a.ends ? new Date(a.ends).toLocaleString('en-US', {
+        weekday: 'short', hour: 'numeric', minute: '2-digit'
+      }) : null;
+      // Truncate long descriptions - NWS bodies can be huge, so we show the
+      // first ~350 chars with a link to expand rather than dumping walls of
+      // text onto the page.
+      const desc = (a.description || '').replace(/\n\n+/g, '\n').trim();
+      const shortDesc = desc.length > 350 ? desc.slice(0, 350).trim() + '…' : desc;
+      const alertId = 'wx-alert-' + Math.random().toString(36).slice(2, 8);
+      return `<div style="background:${style.bg};border:1px solid ${style.border};border-left-width:4px;border-radius:6px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="flex-shrink:0;color:${style.icon};font-size:16px;line-height:1.2">⚠</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">${a.event || 'Advisory'}${a.severity && a.severity !== 'Unknown' ? ` <span style="font-size:11px;font-weight:400;color:${style.icon};margin-left:6px">${a.severity}</span>` : ''}</div>
+            <div style="font-size:12px;color:#7d8590;margin-bottom:6px">${headline}${endsTime ? ` &middot; until ${endsTime}` : ''}</div>
+            ${shortDesc ? `<div id="${alertId}-short" style="font-size:12px;color:#c9d1d9;white-space:pre-wrap;line-height:1.5">${shortDesc}</div>
+              ${desc.length > 350 ? `<div id="${alertId}-full" style="display:none;font-size:12px;color:#c9d1d9;white-space:pre-wrap;line-height:1.5">${desc}</div>
+                <button onclick="document.getElementById('${alertId}-short').style.display=this.dataset.expanded==='1'?'block':'none';document.getElementById('${alertId}-full').style.display=this.dataset.expanded==='1'?'none':'block';this.textContent=this.dataset.expanded==='1'?'Read more':'Show less';this.dataset.expanded=this.dataset.expanded==='1'?'0':'1'" data-expanded="0" style="margin-top:6px;background:none;border:none;color:${style.icon};font-size:11px;cursor:pointer;padding:0">Read more</button>` : ''}
+            ` : ''}
+            ${a.instruction ? `<div style="font-size:12px;color:#e6edf3;margin-top:8px;padding-top:8px;border-top:1px solid ${style.border};font-weight:500">${a.instruction.trim()}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    // Silent fail - alerts are supplementary; don't nuke the forecast display
+    el.innerHTML = '';
+  }
+}
+
 function renderWeather(data) {
   document.getElementById('wx-loading').style.display = 'none';
   document.getElementById('wx-content').style.display = 'block';
+
+  // Fire the NWS alerts fetch in parallel with the rest of the render, so
+  // ride-relevant advisories (wind, thunderstorm, flood, air quality) show
+  // up prominently rather than the user having to check a separate site.
+  fetchAndRenderWxAlerts();
 
   const daily = data.daily;
   const hourly = data.hourly;
@@ -3532,7 +3511,14 @@ function renderWeather(data) {
   // 7-day cards — clickable
   window._wxData = data; // store for day detail
   document.getElementById('wx-days').innerHTML = daily.time.map((date, i) => {
-    const d = new Date(date);
+    // Parse the API's YYYY-MM-DD as a calendar date in the user's local
+    // timezone, not as UTC midnight. new Date('2026-07-06') parses as UTC,
+    // which in Eastern Time is 8pm on 2026-07-05, so getDay() would return
+    // Sunday instead of Monday for that date - causing the tile labelled
+    // "TODAY" (index 0) to be followed by another "SUN" label for what
+    // should be Monday.
+    const [y, m, dd] = date.split('-').map(Number);
+    const d = new Date(y, m - 1, dd);
     const dow = i === 0 ? 'Today' : days[d.getDay()];
     const hi = Math.round(daily.temperature_2m_max[i]);
     const lo = Math.round(daily.temperature_2m_min[i]);
@@ -3649,8 +3635,10 @@ function showDayDetail(dayIdx) {
   const selectedCard = document.getElementById('wx-day-' + dayIdx);
   if (selectedCard) selectedCard.style.borderColor = '#C9A227';
 
-  // Update title
-  const d = new Date(daily.time[dayIdx]);
+  // Update title. Parse as local calendar date to avoid the UTC-midnight
+  // day-of-week drift that made tomorrow's tile show Sunday.
+  const [ty, tm, td] = daily.time[dayIdx].split('-').map(Number);
+  const d = new Date(ty, tm - 1, td);
   const dayName = dayIdx === 0 ? 'Today' : days[d.getDay()] + ' ' + d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   document.getElementById('wx-detail-title').innerHTML = `<div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>${dayName} — detail</div>`;
 
