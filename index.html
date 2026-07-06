@@ -217,6 +217,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .map-popup-title { font-weight:700; margin-bottom:4px; }
 .map-popup a { color:#FC4C02; text-decoration:none; }
 .leaflet-container { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.leaflet-tooltip.route-wp-tooltip { background: #e0691a; color: #0d1117; border: none; box-shadow: none; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+.leaflet-tooltip.route-wp-tooltip::before { display: none; }
 @media(max-width:720px){ #eldorado-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
 
 /* ROUTES / GPX */
@@ -682,6 +684,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <button class="map-toggle active" id="map-toggle-wind-today" onclick="setEldoradoMapWind('today')">Wind Today</button>
       <button class="map-toggle" id="map-toggle-wind-tomorrow" onclick="setEldoradoMapWind('tomorrow')">Wind Tomorrow</button>
       <button class="map-toggle" id="map-toggle-heat" onclick="toggleEldoradoMapLayer('heat')">Heatmap</button>
+      <button class="map-toggle" id="map-toggle-route" onclick="toggleRouteBuilder()" style="border-color:#e0691a">Route builder</button>
+    </div>
+    <div id="route-builder-panel" style="display:none;background:#161b22;border:1px solid #e0691a;border-radius:6px;padding:12px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Distance</div><div id="route-distance" style="font-size:16px;font-weight:600;color:#e0691a">0.0 mi</div></div>
+          <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Elevation gain</div><div id="route-elevation" style="font-size:16px;font-weight:600;color:#e0691a">0 ft</div></div>
+          <div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px">Waypoints</div><div id="route-waypoints" style="font-size:16px;font-weight:600;color:#e0691a">0</div></div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="map-toggle" onclick="undoRouteWaypoint()" style="font-size:11px">Undo point</button>
+          <button class="map-toggle" onclick="clearRoute()" style="font-size:11px">Clear</button>
+          <button class="map-toggle active" onclick="downloadRouteGPX()" style="font-size:11px;background:#e0691a;color:#0d1117;border-color:#e0691a">Download GPX</button>
+        </div>
+      </div>
+      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Click on the map to drop waypoints. Roads between them are auto-routed via OSRM. Import the GPX to Garmin Connect &rarr; Send to Device to ride it.</div>
     </div>
     <div class="map-shell"><div id="eldorado-map"></div></div>
     <div class="map-legend">
@@ -692,6 +710,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="map-legend-item"><span class="map-swatch" style="background:#58a6ff"></span>No wind/geometry data</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#000000"></span>Ride heatmap (darker = more rides)</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#dc2626"></span>Run heatmap (darker = more runs)</div>
+      <div class="map-legend-item"><span class="map-swatch" style="background:#e0691a"></span>Planned route</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
   </div>
@@ -4775,7 +4794,7 @@ async function renderFullKomList() {
 
 // ==================== MAP ====================
 let eldoradoMap = null;
-let eldoradoMapLayers = { achievements: null, heat: null };
+let eldoradoMapLayers = { achievements: null, heat: null, route: null };
 let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today' };
 let eldoradoMapBoundsFit = false; // only auto-fit map bounds once; subsequent renders preserve the user's zoom/pan
 
@@ -4833,6 +4852,10 @@ function initEldoradoMap() {
   addEldoradoBaseTiles();
   eldoradoMapLayers.achievements = L.layerGroup().addTo(eldoradoMap);
   eldoradoMapLayers.heat = L.layerGroup().addTo(eldoradoMap);
+  // Route layer sits above achievements so the planned route line is
+  // always visible on top of KOM overlays.
+  eldoradoMapLayers.route = L.layerGroup().addTo(eldoradoMap);
+  eldoradoMap.on('click', onMapClickForRouteBuilder);
   setTimeout(function(){ eldoradoMap.invalidateSize(); }, 150);
 }
 
@@ -4864,6 +4887,239 @@ function setEldoradoMapWind(day) {
   });
   renderEldoradoMap();
 }
+
+// =========== ROUTE BUILDER ============================================
+// Turns the Map page into an interactive route planner. User clicks drop
+// waypoints; between each pair we call OSRM (the public demo server, free
+// and no key, sufficient for occasional deliberate clicks) to snap the
+// leg along real roads. Elevation is fetched from Open-Meteo's free
+// elevation endpoint in batches. Route stats update live, and the whole
+// thing exports as GPX for import into Garmin Connect. Since Garmin's
+// Courses API requires a signed server-side secret we don't have, this
+// deliberately does NOT try to push directly to Garmin - the user runs
+// the resulting GPX through Garmin Connect's Import Course flow.
+let routeBuilderActive = false;
+let routeWaypoints = [];      // [{lat, lng}] the user's clicked points
+let routeLegs = [];           // aligned with waypoints[i..i+1]: {points:[[lat,lng]...], distanceM, ascentM}
+let routeMarkers = [];        // Leaflet marker refs for waypoints
+let routeLine = null;         // combined polyline
+let routeCalculating = false; // debounce for concurrent leg calls
+
+function toggleRouteBuilder() {
+  routeBuilderActive = !routeBuilderActive;
+  const btn = document.getElementById('map-toggle-route');
+  const panel = document.getElementById('route-builder-panel');
+  if (btn) btn.classList.toggle('active', routeBuilderActive);
+  if (panel) panel.style.display = routeBuilderActive ? 'block' : 'none';
+  if (eldoradoMap) {
+    // Change cursor to signal click-to-drop mode
+    eldoradoMap.getContainer().style.cursor = routeBuilderActive ? 'crosshair' : '';
+  }
+  updateRouteStats();
+}
+
+function onMapClickForRouteBuilder(e) {
+  if (!routeBuilderActive) return;
+  const wp = { lat: e.latlng.lat, lng: e.latlng.lng };
+  routeWaypoints.push(wp);
+  addWaypointMarker(wp, routeWaypoints.length);
+  if (routeWaypoints.length >= 2) {
+    // Route the newest leg only, keeping earlier legs intact
+    routeLeg(routeWaypoints.length - 2);
+  } else {
+    updateRouteStats();
+  }
+}
+
+function addWaypointMarker(wp, index) {
+  const isStart = index === 1;
+  const color = isStart ? '#3fb950' : '#e0691a';
+  const marker = L.circleMarker([wp.lat, wp.lng], {
+    radius: 7, color: '#0d1117', fillColor: color, weight: 2, opacity: 1, fillOpacity: 1
+  }).addTo(eldoradoMapLayers.route);
+  marker.bindTooltip(String(index), { permanent: true, direction: 'top', offset: [0, -6], className: 'route-wp-tooltip' });
+  routeMarkers.push(marker);
+}
+
+async function routeLeg(legIndex) {
+  const a = routeWaypoints[legIndex];
+  const b = routeWaypoints[legIndex + 1];
+  if (!a || !b) return;
+  setRouteStatus('Routing leg ' + (legIndex + 1) + '...');
+  routeCalculating = true;
+  try {
+    // OSRM public demo server. Cycling profile. Free, no key needed.
+    // Fair use: only fires on deliberate user clicks so volume is low.
+    const url = 'https://router.project-osrm.org/route/v1/cycling/' +
+      a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
+      '?overview=full&geometries=geojson';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('OSRM returned ' + resp.status);
+    const data = await resp.json();
+    if (!data.routes || !data.routes.length) throw new Error('No route found');
+    const coords = data.routes[0].geometry.coordinates; // [lng, lat] pairs
+    const points = coords.map(function(c){ return [c[1], c[0]]; }); // Leaflet uses [lat, lng]
+    const distanceM = data.routes[0].distance;
+
+    // Fetch elevations for these points via Open-Meteo elevation endpoint.
+    // We downsample first - a full urban route can return hundreds of points
+    // and we don't need every one for a reasonable ascent estimate.
+    const sampledPoints = downsampleForElevation(points, 100);
+    let ascentM = 0;
+    try {
+      const elevations = await fetchElevations(sampledPoints);
+      for (let i = 1; i < elevations.length; i++) {
+        const diff = elevations[i] - elevations[i - 1];
+        if (diff > 0) ascentM += diff;
+      }
+    } catch (e) {
+      console.warn('Elevation lookup failed for leg:', e);
+    }
+
+    routeLegs[legIndex] = { points, distanceM, ascentM };
+    renderRoutePolyline();
+    updateRouteStats();
+    setRouteStatus('Click on the map to add more waypoints, or download the GPX when done.');
+  } catch (err) {
+    setRouteStatus('Routing failed: ' + err.message + '. Try a closer waypoint or try again.');
+    // Remove the waypoint that failed to route so state stays consistent
+    routeWaypoints.splice(legIndex + 1, 1);
+    if (routeMarkers[legIndex + 1]) {
+      eldoradoMapLayers.route.removeLayer(routeMarkers[legIndex + 1]);
+      routeMarkers.splice(legIndex + 1, 1);
+    }
+  } finally {
+    routeCalculating = false;
+  }
+}
+
+function downsampleForElevation(points, maxSamples) {
+  if (points.length <= maxSamples) return points;
+  const step = Math.ceil(points.length / maxSamples);
+  const out = [];
+  for (let i = 0; i < points.length; i += step) out.push(points[i]);
+  if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
+  return out;
+}
+
+async function fetchElevations(points) {
+  // Open-Meteo elevation endpoint accepts up to 100 lat/lng pairs per call
+  const lats = points.map(function(p){ return p[0]; }).join(',');
+  const lngs = points.map(function(p){ return p[1]; }).join(',');
+  const url = 'https://api.open-meteo.com/v1/elevation?latitude=' + lats + '&longitude=' + lngs;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Elevation API returned ' + resp.status);
+  const data = await resp.json();
+  return data.elevation || [];
+}
+
+function renderRoutePolyline() {
+  if (routeLine) { eldoradoMapLayers.route.removeLayer(routeLine); routeLine = null; }
+  const allPoints = [];
+  routeLegs.forEach(function(leg) {
+    if (!leg || !leg.points) return;
+    leg.points.forEach(function(p){ allPoints.push(p); });
+  });
+  if (allPoints.length >= 2) {
+    routeLine = L.polyline(allPoints, { color: '#e0691a', weight: 4, opacity: 0.9 });
+    routeLine.addTo(eldoradoMapLayers.route);
+    // Ensure waypoint markers stay above the line
+    routeMarkers.forEach(function(m){ if (m.bringToFront) m.bringToFront(); });
+  }
+}
+
+function updateRouteStats() {
+  let totalM = 0, totalAscent = 0;
+  routeLegs.forEach(function(leg) {
+    if (!leg) return;
+    totalM += leg.distanceM || 0;
+    totalAscent += leg.ascentM || 0;
+  });
+  const distEl = document.getElementById('route-distance');
+  const elevEl = document.getElementById('route-elevation');
+  const wpEl = document.getElementById('route-waypoints');
+  if (distEl) distEl.textContent = (totalM / 1609.34).toFixed(2) + ' mi';
+  if (elevEl) elevEl.textContent = Math.round(totalAscent * 3.281).toLocaleString() + ' ft';
+  if (wpEl) wpEl.textContent = String(routeWaypoints.length);
+}
+
+function setRouteStatus(msg) {
+  const el = document.getElementById('route-status');
+  if (el) el.textContent = msg;
+}
+
+function undoRouteWaypoint() {
+  if (!routeWaypoints.length) return;
+  routeWaypoints.pop();
+  routeLegs.pop();
+  const lastMarker = routeMarkers.pop();
+  if (lastMarker) eldoradoMapLayers.route.removeLayer(lastMarker);
+  renderRoutePolyline();
+  updateRouteStats();
+  setRouteStatus(routeWaypoints.length ? 'Waypoint removed. Click to add more.' : 'Route cleared. Click on the map to start again.');
+}
+
+function clearRoute() {
+  routeWaypoints = [];
+  routeLegs = [];
+  routeMarkers = [];
+  if (eldoradoMapLayers.route) eldoradoMapLayers.route.clearLayers();
+  routeLine = null;
+  updateRouteStats();
+  setRouteStatus('Route cleared. Click on the map to start again.');
+}
+
+function downloadRouteGPX() {
+  if (routeWaypoints.length < 2 || !routeLegs.some(function(l){ return l && l.points && l.points.length; })) {
+    setRouteStatus('Add at least two waypoints before downloading.');
+    return;
+  }
+  // Assemble all leg points into one continuous track
+  const trackPoints = [];
+  routeLegs.forEach(function(leg) {
+    if (!leg || !leg.points) return;
+    leg.points.forEach(function(p) {
+      // Avoid duplicating the last point of one leg with the first of the next
+      const last = trackPoints[trackPoints.length - 1];
+      if (last && last[0] === p[0] && last[1] === p[1]) return;
+      trackPoints.push(p);
+    });
+  });
+  const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const routeName = 'ElDorado route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // Standard GPX 1.1 - Garmin Connect Import Course accepts this format
+  const gpx =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<gpx version="1.1" creator="ElDorado Training Intelligence" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+    '  <metadata>\n' +
+    '    <name>' + escapeXML(routeName) + '</name>\n' +
+    '    <time>' + now + '</time>\n' +
+    '  </metadata>\n' +
+    '  <trk>\n' +
+    '    <name>' + escapeXML(routeName) + '</name>\n' +
+    '    <trkseg>\n' +
+    trackPoints.map(function(p) {
+      return '      <trkpt lat="' + p[0].toFixed(6) + '" lon="' + p[1].toFixed(6) + '"></trkpt>\n';
+    }).join('') +
+    '    </trkseg>\n' +
+    '  </trk>\n' +
+    '</gpx>\n';
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'eldorado-route-' + new Date().toISOString().slice(0, 10) + '.gpx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  setRouteStatus('GPX downloaded. Import to Garmin Connect (Training \u2192 Courses \u2192 Import Course), then Send to Device.');
+}
+
+function escapeXML(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+// =========== END ROUTE BUILDER ========================================
 
 function decodePolyline(str) {
   if (!str || typeof str !== 'string') return [];
