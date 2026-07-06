@@ -716,7 +716,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
           <button class="map-toggle active" onclick="downloadRouteGPX()" style="font-size:11px;background:#e0691a;color:#0d1117;border-color:#e0691a">Download GPX</button>
         </div>
       </div>
-      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Choose Bike, Run/Walk auto, or Trail/Manual. Auto uses OSRM routing; Trail/Manual follows the exact trail points you click when the router will not snap to a path.</div>
+      <div id="route-status" style="font-size:11px;color:#7d8590;margin-top:8px">Choose Bike, Run/Walk auto, or Trail/Manual. You can switch modes mid-route: existing legs stay as-is, and the next waypoint uses the currently selected mode.</div>
       <div id="route-segments-list" style="font-size:11px;color:#7d8590;margin-top:8px"></div>
       <div style="border-top:1px solid #30363d;margin-top:10px;padding-top:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
@@ -4926,7 +4926,7 @@ function setEldoradoMapWind(day) {
 let routeBuilderActive = false;
 let routeMode = 'bike';       // bike = OSRM bike, foot = OSRM foot, manual = direct trail/manual GPX points
 let routeWaypoints = [];      // [{lat, lng}] the user's clicked points
-let routeLegs = [];           // aligned with waypoints[i..i+1]: {points:[[lat,lng]...], distanceM, ascentM}
+let routeLegs = [];           // aligned with waypoints[i..i+1]: {points:[[lat,lng]...], distanceM, ascentM, mode}
 let routeMarkers = [];        // Leaflet marker refs for waypoints
 let routeLine = null;         // combined polyline
 let routeCalculating = false; // debounce for concurrent leg calls
@@ -4949,25 +4949,34 @@ function toggleRouteBuilder() {
 }
 
 
+function routeModeLabel(mode) {
+  if (mode === 'manual') return 'Trail/Manual';
+  if (mode === 'foot') return 'Run/Walk auto';
+  return 'Bike';
+}
+
 function setRouteMode(mode) {
   if (mode !== 'bike' && mode !== 'foot' && mode !== 'manual') mode = 'bike';
-  if (routeWaypoints.length > 1 && mode !== routeMode) {
-    if (!confirm('Switching route mode will clear the current planned route so it can be re-routed correctly. Continue?')) {
-      const el = document.getElementById('route-mode');
-      if (el) el.value = routeMode;
-      return;
-    }
-    clearRoute();
-  }
+  const previousMode = routeMode;
   routeMode = mode;
   const el = document.getElementById('route-mode');
   if (el) el.value = routeMode;
+
+  // Do NOT clear an in-progress route when switching modes. Earlier legs keep
+  // the mode they were created with; the next leg uses the newly selected mode.
+  // This is important in real route building: you often only realize you need
+  // manual trail tracing after the auto-router skips a park path.
+  const modeChangedMidRoute = previousMode !== routeMode && routeWaypoints.length > 0;
+  const prefix = modeChangedMidRoute
+    ? 'Switched to ' + routeModeLabel(routeMode) + '. Existing route stays; the next segment you click will use this mode. '
+    : '';
+
   if (routeMode === 'manual') {
-    setRouteStatus('Trail/Manual mode: click directly along the trail. ElDorado will connect your clicked points exactly instead of snapping to roads. Use more points around turns.');
+    setRouteStatus(prefix + 'Trail/Manual mode: click directly along the trail. ElDorado will connect your clicked points exactly instead of snapping to roads. Use more points around turns.');
   } else if (routeMode === 'foot') {
-    setRouteStatus('Run/Walk auto mode: OSRM foot routing will try pedestrian paths and trails, but some park trails may be missing from its routing graph. Use Trail/Manual if it skips a trail.');
+    setRouteStatus(prefix + 'Run/Walk auto mode: OSRM foot routing will try pedestrian paths and trails, but some park trails may be missing from its routing graph. Switch back to Trail/Manual anytime for the next leg.');
   } else {
-    setRouteStatus('Bike mode: OSRM bike routing will favor bike-legal roads/paths. Click on the map to start.');
+    setRouteStatus(prefix + 'Bike mode: OSRM bike routing will favor bike-legal roads/paths. The next leg you click will use bike routing.');
   }
 }
 
@@ -4998,13 +5007,14 @@ async function routeLeg(legIndex) {
   const a = routeWaypoints[legIndex];
   const b = routeWaypoints[legIndex + 1];
   if (!a || !b) return;
-  setRouteStatus(routeMode === 'manual' ? 'Drawing manual trail leg ' + (legIndex + 1) + '...' : 'Routing leg ' + (legIndex + 1) + '...');
+  const legMode = routeMode; // capture the mode selected when this leg starts
+  setRouteStatus(legMode === 'manual' ? 'Drawing manual trail leg ' + (legIndex + 1) + '...' : 'Routing leg ' + (legIndex + 1) + ' with ' + routeModeLabel(legMode) + '...');
   routeCalculating = true;
   try {
     let points = [];
     let distanceM = 0;
 
-    if (routeMode === 'manual') {
+    if (legMode === 'manual') {
       // Trail/manual mode does NOT call a road router. This is intentional:
       // public routing engines often skip small park trails or unpaved paths.
       // We connect the exact clicked trail points, then export those as GPX.
@@ -5016,7 +5026,7 @@ async function routeLeg(legIndex) {
       // routing graph includes them. Some local trails still may be unavailable,
       // which is what Trail/Manual mode is for.
       // Fair use: only fires on deliberate user clicks so volume is low.
-      const profile = routeMode === 'foot' ? 'foot' : 'bike';
+      const profile = legMode === 'foot' ? 'foot' : 'bike';
       const url = 'https://router.project-osrm.org/route/v1/' + profile + '/' +
         a.lng + ',' + a.lat + ';' + b.lng + ',' + b.lat +
         '?overview=full&geometries=geojson';
@@ -5044,12 +5054,12 @@ async function routeLeg(legIndex) {
       console.warn('Elevation lookup failed for leg:', e);
     }
 
-    routeLegs[legIndex] = { points, distanceM, ascentM, mode: routeMode };
+    routeLegs[legIndex] = { points, distanceM, ascentM, mode: legMode };
     renderRoutePolyline();
     updateRouteStats();
-    setRouteStatus(routeMode === 'manual'
-      ? 'Manual trail leg added. Keep clicking along the trail to shape the GPX precisely.'
-      : 'Click on the map to add more waypoints, or download the GPX when done.');
+    setRouteStatus(legMode === 'manual'
+      ? 'Manual trail leg added. You can switch modes anytime; the next click uses the selected mode.'
+      : 'Leg added with ' + routeModeLabel(legMode) + '. You can switch modes anytime, add more waypoints, or download the GPX when done.');
   } catch (err) {
     setRouteStatus('Routing failed: ' + err.message + '. Try a closer waypoint, or switch to Trail/Manual to draw the trail yourself.');
     // Remove the waypoint that failed to route so state stays consistent
