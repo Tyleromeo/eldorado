@@ -397,6 +397,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         <button class="nav-btn active" data-sport="ride" onclick="setPowerCurveSport('ride')">Rides</button>
         <button class="nav-btn" data-sport="run" onclick="setPowerCurveSport('run')">Runs</button>
       </div>
+      <div id="power-view-toggle" style="display:flex;gap:4px;margin-bottom:10px">
+        <button class="nav-btn active" data-view="all" onclick="setPowerCurveView('all')">All time</button>
+        <button class="nav-btn" data-view="year" onclick="setPowerCurveView('year')">This year</button>
+      </div>
       <div id="power-scan-status" style="font-size:12px;color:#7d8590;padding:2px 0 10px"></div>
       <div id="power-scan-controls" style="margin-bottom:12px"></div>
       <div id="power-curve-bars"></div>
@@ -2449,6 +2453,7 @@ const POWER_SPORTS = {
   run:  Object.assign({ types: ['Run','TrailRun'],     label: 'Runs',  cacheKey: 'power_curve_scan_progress_v1_run' }, buildDurationSet(STRAVA_STANDARD_DURATIONS, []))
 };
 let currentPowerSport = 'ride';
+let currentPowerView = 'all'; // 'all' | 'year' - shared across both sports
 
 function renderPowerCurve() {
   setPowerCurveSport(currentPowerSport);
@@ -2463,21 +2468,41 @@ function setPowerCurveSport(sport) {
   renderPowerCurveFromScan();
 }
 
+function setPowerCurveView(view) {
+  currentPowerView = view;
+  document.querySelectorAll('#power-view-toggle .nav-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-view') === view);
+  });
+  renderPowerCurveFromScan();
+}
+
+// Bump whenever the scan's output shape changes in a way that old scanned
+// rides can't retroactively fill in (new derived data needing the raw
+// stream, which isn't cached) - this forces a one-time automatic rescan.
+const POWER_SCHEMA_VERSION = 2;
+function powerProgressKey(sport) {
+  return POWER_SCHEMA_VERSION + ':' + POWER_SPORTS[sport].durations.join(',');
+}
+function freshPowerProgress(sport) {
+  return { scannedIds: [], top5: {}, byYear: {}, complete: false, durationsKey: powerProgressKey(sport) };
+}
+
 async function getPowerScanProgress(athleteId, sport) {
   const cacheKey = POWER_SPORTS[sport].cacheKey;
-  const durationsKey = POWER_SPORTS[sport].durations.join(',');
+  const durationsKey = powerProgressKey(sport);
   let progress = await getCached(athleteId, cacheKey, 365*24*60*60*1000);
-  if (!progress) return { scannedIds: [], top5: {}, complete: false, durationsKey };
+  if (!progress) return freshPowerProgress(sport);
   if (!progress.top5) progress.top5 = {};
+  if (!progress.byYear) progress.byYear = {};
   if (!progress.scannedIds) progress.scannedIds = [];
 
-  // The raw per-second stream isn't kept, only the derived top5 - so if the
-  // tracked duration set ever changes (e.g. new checkpoints added), already
-  // -scanned rides have no way to retroactively fill in the new categories
-  // without being re-fetched. Rather than leave those categories silently
-  // empty forever, detect the change and start a clean rescan automatically.
+  // The raw per-second stream isn't kept, only the derived top5/byYear - so
+  // if the tracked duration set or schema version ever changes, already
+  // -scanned rides have no way to retroactively fill in the new data
+  // without being re-fetched. Rather than leave that data silently empty
+  // forever, detect the change and start a clean rescan automatically.
   if (progress.durationsKey !== durationsKey) {
-    progress = { scannedIds: [], top5: {}, complete: false, durationsKey };
+    progress = freshPowerProgress(sport);
   }
   return progress;
 }
@@ -2488,7 +2513,7 @@ function savePowerScanProgress(athleteId, sport, progress) {
 
 async function resetPowerScan(athleteId, sport) {
   if (!confirm(`This clears all ${POWER_SPORTS[sport].label.toLowerCase()} power curve scan progress and starts over from scratch. Continue?`)) return;
-  await savePowerScanProgress(athleteId, sport, { scannedIds: [], top5: {}, complete: false, durationsKey: POWER_SPORTS[sport].durations.join(',') });
+  await savePowerScanProgress(athleteId, sport, freshPowerProgress(sport));
   await renderPowerScanUI();
   renderPowerCurveFromScan();
 }
@@ -2566,6 +2591,7 @@ async function scanPowerCurveChunk(token, athleteId, sport) {
       if (stream && stream.watts && stream.watts.data && stream.time && stream.time.data) {
         const sportDurations = POWER_SPORTS[sport].durations;
         const bests = computeBestPowerPerDuration(stream.time.data, stream.watts.data, sportDurations);
+        const year = new Date(ride.start_date).getFullYear();
         sportDurations.forEach((dur, i) => {
           const watts = bests[i];
           if (watts <= 0) return;
@@ -2573,6 +2599,16 @@ async function scanPowerCurveChunk(token, athleteId, sport) {
           list.push({ watts, activity_id: ride.id, activity_name: ride.name, start_date: ride.start_date });
           list.sort((a,b) => b.watts - a.watts);
           progress.top5[dur] = list.slice(0, 5);
+
+          // Best single effort per duration per calendar year, tracked
+          // alongside the all-time top5 so "this year vs all-time" can be
+          // compared without needing this year's best to have cracked the
+          // global top 5.
+          if (!progress.byYear[dur]) progress.byYear[dur] = {};
+          const yearBest = progress.byYear[dur][year];
+          if (!yearBest || watts > yearBest.watts) {
+            progress.byYear[dur][year] = { watts, activity_id: ride.id, activity_name: ride.name, start_date: ride.start_date };
+          }
         });
       }
       processed++;
@@ -2649,13 +2685,24 @@ async function renderPowerScanUI() {
 async function renderPowerCurveFromScan() {
   if (!athleteData) return;
   const sport = currentPowerSport;
+  const progress = await getPowerScanProgress(athleteData.id, sport);
+
+  if (currentPowerView === 'year') {
+    renderPowerCurveYearCompare(progress, sport);
+  } else {
+    renderPowerCurveAllTime(progress, sport);
+  }
+
+  renderPowerTop5List(progress, sport);
+}
+
+function renderPowerCurveAllTime(progress, sport) {
   const isRide = sport === 'ride';
   const durations = POWER_SPORTS[sport].durations;
   const labels = POWER_SPORTS[sport].labels;
   const s = getSettings();
   const ftp = s.ftp || 220;
   const weight = s.weight || 75;
-  const progress = await getPowerScanProgress(athleteData.id, sport);
 
   const bestPowers = durations.map(dur => {
     const list = progress.top5[dur];
@@ -2700,8 +2747,76 @@ async function renderPowerCurveFromScan() {
                 y:{grid:{color:'rgba(255,255,255,0.04)'},min:0,ticks:{color:'#7d8590',font:{size:11},callback:function(v){return v+'w';}}}}}
     });
   }
+}
 
-  renderPowerTop5List(progress, sport);
+// This-year vs all-time comparison. This-year best is tracked separately
+// (progress.byYear) rather than derived from the all-time top5, since a
+// duration where this year's best doesn't crack the global top 5 would
+// otherwise show as having no data this year at all, which is wrong -
+// they may simply be riding/running slower than a past peak.
+function renderPowerCurveYearCompare(progress, sport) {
+  const isRide = sport === 'ride';
+  const durations = POWER_SPORTS[sport].durations;
+  const labels = POWER_SPORTS[sport].labels;
+  const currentYear = new Date().getFullYear();
+  const accent = isRide ? '#FC4C02' : '#58a6ff';
+
+  const allTimeBests = durations.map(dur => {
+    const list = progress.top5[dur];
+    return (list && list.length) ? list[0].watts : 0;
+  });
+  const thisYearBests = durations.map(dur => {
+    const yearData = progress.byYear[dur];
+    return (yearData && yearData[currentYear]) ? yearData[currentYear].watts : 0;
+  });
+
+  const barsEl = document.getElementById('power-curve-bars');
+  if (!barsEl) return;
+  const haveAny = allTimeBests.some(p => p > 0) || thisYearBests.some(p => p > 0);
+
+  if (!haveAny) {
+    barsEl.innerHTML = `<p style="font-size:12px;color:#7d8590">No power data yet for ${POWER_SPORTS[sport].label.toLowerCase()} - run the scan above to build this out.</p>`;
+    if (charts['power']) { charts['power'].destroy(); delete charts['power']; }
+    return;
+  }
+
+  barsEl.innerHTML = labels.map((label, i) => {
+    const ty = thisYearBests[i], at = allTimeBests[i];
+    if (!ty && !at) return '';
+    const maxP = Math.max(ty, at, 1);
+    const diff = (ty && at) ? Math.round((ty - at) / at * 100) : null;
+    const diffColor = diff > 0 ? '#3fb950' : diff < 0 ? '#f85149' : '#7d8590';
+    const diffStr = diff !== null
+      ? `<span style="color:${diffColor}">${diff > 0 ? '+' : ''}${diff}% vs all-time</span>`
+      : (ty && !at ? '<span style="color:#7d8590">no all-time data yet</span>' : '');
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#7d8590;margin-bottom:3px"><span>${label}</span>${diffStr}</div>
+      <div style="margin-bottom:2px"><div style="display:flex;align-items:center;gap:6px">
+        <div style="width:60px;font-size:11px;color:${accent}">${currentYear}</div>
+        <div class="pz-bar"><div class="pz-fill" style="width:${ty?Math.round(ty/maxP*100):0}%;background:${accent}"></div></div>
+        <div style="width:50px;font-size:11px;color:#e6edf3;text-align:right">${ty ? ty+'w' : '--'}</div>
+      </div></div>
+      <div><div style="display:flex;align-items:center;gap:6px">
+        <div style="width:60px;font-size:11px;color:#888">All-time</div>
+        <div class="pz-bar"><div class="pz-fill" style="width:${at?Math.round(at/maxP*100):0}%;background:#666"></div></div>
+        <div style="width:50px;font-size:11px;color:#e6edf3;text-align:right">${at ? at+'w' : '--'}</div>
+      </div></div>
+    </div>`;
+  }).join('');
+
+  if (charts['power']) charts['power'].destroy();
+  const ctx = document.getElementById('power-chart').getContext('2d');
+  charts['power'] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: String(currentYear), data: thisYearBests.map(p=>p||null), borderColor: accent, borderWidth: 2, pointRadius: 3, pointBackgroundColor: accent, tension: 0.3, fill: false, spanGaps: true },
+      { label: 'All-time', data: allTimeBests.map(p=>p||null), borderColor: '#666', borderWidth: 1.5, borderDash: [4,4], pointRadius: 3, pointBackgroundColor: '#666', tension: 0.3, fill: false, spanGaps: true }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: '#7d8590', font: { size: 11 } } } },
+      scales: { x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#7d8590', font: { size: 11 } } },
+                y: { grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, ticks: { color: '#7d8590', font: { size: 11 }, callback: function(v){ return v+'w'; } } } } }
+  });
 }
 
 function renderPowerTop5List(progress, sport) {
