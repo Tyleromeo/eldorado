@@ -425,7 +425,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
   <div class="card">
     <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M4 19h16M4 15l4-4 4 3 6-8"/></svg>Distance records — 400m to 100K</div></div>
-    <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Your single fastest time at each standard distance, with a link to the activity. Built from the same full-history scan as your Segments/KOM data (400m-Marathon come from Strava directly; 50K/100K are computed from raw distance data since Strava doesn't track those natively).</div>
+    <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Your top 10 fastest times at each standard distance, each linking to the activity. Built from the same full-history scan as your Segments/KOM data (400m-Marathon come from Strava directly; 50K/100K are computed from raw distance data since Strava doesn't track those natively).</div>
+    <div id="distance-scan-status" style="font-size:12px;color:#7d8590;padding:2px 0 10px"></div>
+    <div id="distance-scan-controls" style="margin-bottom:12px"></div>
     <div id="distance-records-list"></div>
   </div>
 
@@ -1564,6 +1566,16 @@ async function getScanProgress(athleteId) {
   if (!progress.distanceScannedIds) progress.distanceScannedIds = [];
   if (!progress.ultraScannedIds) progress.ultraScannedIds = [];
 
+  // distanceRecords entries used to store a single best object per distance;
+  // now each is a top-10 array. Normalize any leftover single-object entries
+  // (e.g. 50K/100K recorded before this change) into one-element arrays
+  // rather than losing that data.
+  Object.keys(progress.distanceRecords).forEach(name => {
+    if (!Array.isArray(progress.distanceRecords[name])) {
+      progress.distanceRecords[name] = [progress.distanceRecords[name]];
+    }
+  });
+
   // One-time self-heal for data scanned before the rank-vs-category fix
   // (achievement "type" is the leaderboard category, not the position -
   // some 2nd-10th place finishes were mislabeled as KOMs). Every entry
@@ -1745,18 +1757,18 @@ async function scanKomChunk(token, athleteId) {
       }
 
       if (needsDistance && detail.best_efforts) {
-        // Standard-distance PRs (400m through Marathon) - Strava computes
+        // Standard-distance top-10s (400m through Marathon) - Strava computes
         // these directly on run activities, no streams call needed. Ultra
         // distances (50K/100K) aren't included here; those are handled by
         // a separate stream-based pass since Strava doesn't compute them.
         detail.best_efforts.forEach(e => {
-          const existing = progress.distanceRecords[e.name];
-          if (!existing || e.elapsed_time < existing.elapsed) {
-            progress.distanceRecords[e.name] = {
-              activity_id: ride.id, activity_name: ride.name,
-              elapsed: e.elapsed_time, distance: e.distance, date: ride.start_date
-            };
-          }
+          const list = progress.distanceRecords[e.name] || [];
+          list.push({
+            activity_id: ride.id, activity_name: ride.name,
+            elapsed: e.elapsed_time, distance: e.distance, date: ride.start_date
+          });
+          list.sort((a,b) => a.elapsed - b.elapsed);
+          progress.distanceRecords[e.name] = list.slice(0, 10);
         });
       }
 
@@ -2778,10 +2790,10 @@ async function scanUltraDistancesChunk(token, athleteId) {
         ULTRA_DISTANCES.forEach(({ name, meters }) => {
           const elapsed = bestTimeForDistance(stream.distance.data, stream.time.data, meters);
           if (elapsed == null) return;
-          const existing = progress.distanceRecords[name];
-          if (!existing || elapsed < existing.elapsed) {
-            progress.distanceRecords[name] = { activity_id: act.id, activity_name: act.name, elapsed, distance: meters, date: act.start_date };
-          }
+          const list = progress.distanceRecords[name] || [];
+          list.push({ activity_id: act.id, activity_name: act.name, elapsed, distance: meters, date: act.start_date });
+          list.sort((a,b) => a.elapsed - b.elapsed);
+          progress.distanceRecords[name] = list.slice(0, 10);
         });
       }
       processed++;
@@ -2797,31 +2809,90 @@ async function scanUltraDistancesChunk(token, athleteId) {
   return { processed, remaining, rateLimited, totalEligible: eligible.length };
 }
 
+let distanceScanRunning = false;
+
+// Wraps the shared KOM/distance-records scan (scanKomChunk) so it can be
+// triggered directly from the Performance page's Distance Records card,
+// instead of requiring a trip to Segments - it's the same underlying scan
+// either way (one activity-detail fetch feeds both KOMs and best_efforts).
+async function runDistanceRecordsScanChunk() {
+  if (distanceScanRunning) return;
+  distanceScanRunning = true;
+  const btn = document.getElementById('distance-scan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scanning...'; }
+
+  const token = await getToken();
+  if (!token || !athleteData) { distanceScanRunning = false; return; }
+
+  const result = await scanKomChunk(token, athleteData.id);
+  distanceScanRunning = false;
+
+  if (result.rateLimited) {
+    showToast('⚠️', 'Rate limit hit', 'Strava rate limit reached. Progress saved - try again in a few minutes.');
+  } else if (result.processed > 0) {
+    showToast('✅', 'Chunk scanned', `Processed ${result.processed} activities. ${result.remaining} remaining.`);
+  }
+  await renderDistanceRecords();
+  // Keep the Segments page's KOM scan UI in sync too, since it's the same
+  // shared progress - only does anything if that page happens to be mounted.
+  if (document.getElementById('kom-scan-status')) renderKomScanUI();
+}
+
+async function renderDistanceScanUI(progress) {
+  const statusEl = document.getElementById('distance-scan-status');
+  const controlsEl = document.getElementById('distance-scan-controls');
+  if (!statusEl || !controlsEl || !athleteData) return;
+
+  const scannedSet = new Set(progress.scannedIds);
+  const distanceScannedSet = new Set(progress.distanceScannedIds);
+  const total = allActivities.length;
+  const remaining = allActivities.filter(a => !scannedSet.has(a.id) || !distanceScannedSet.has(a.id)).length;
+
+  if (!total) {
+    statusEl.textContent = '';
+    controlsEl.innerHTML = '';
+  } else if (remaining === 0) {
+    statusEl.innerHTML = `Full scan complete across ${total} activities.`;
+    controlsEl.innerHTML = '';
+  } else {
+    statusEl.innerHTML = `This scan is shared with your Segments/KOM scan - <strong>${remaining}</strong> of ${total} activities still need processing to complete your distance records.`;
+    controlsEl.innerHTML = `<button class="gold-btn" id="distance-scan-btn" onclick="runDistanceRecordsScanChunk()">Scan next ${Math.min(SCAN_CHUNK_SIZE, remaining)}</button>`;
+  }
+}
+
 async function renderDistanceRecords() {
   const listEl = document.getElementById('distance-records-list');
   if (!listEl || !athleteData) return;
 
   const progress = await getScanProgress(athleteData.id);
+  await renderDistanceScanUI(progress);
+
   const records = progress.distanceRecords || {};
-  const known = DISTANCE_RECORD_ORDER.filter(name => records[name]);
-  const extra = Object.keys(records).filter(name => !DISTANCE_RECORD_ORDER.includes(name)).sort();
+  const known = DISTANCE_RECORD_ORDER.filter(name => records[name] && records[name].length);
+  const extra = Object.keys(records).filter(name => !DISTANCE_RECORD_ORDER.includes(name) && records[name] && records[name].length).sort();
   const names = [...known, ...extra];
 
-  listEl.innerHTML = names.length ? names.map(name => {
-    const r = records[name];
-    const date = new Date(r.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #21262d">' +
-      '<div style="width:92px;flex-shrink:0;font-weight:600;color:#e6edf3">' + name + '</div>' +
-      '<div style="flex:1;min-width:0"><a href="' + stravaActivityHref(r.activity_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(r.activity_name || 'Activity') + '</a><div class="row-meta">' + date + '</div></div>' +
-      '<div style="flex-shrink:0;font-weight:600;color:#58a6ff">' + formatElapsedClock(r.elapsed) + '</div>' +
-    '</div>';
-  }).join('') : '<p style="font-size:13px;color:#7d8590">No distance records yet - run the scan in Segments to build these out (it captures distance PRs from the same activity data, at no extra API cost).</p>';
+  const sections = names.map(name => {
+    const rows = records[name].map((r, rank) => {
+      const date = new Date(r.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+      return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
+        '<span class="badge b-blue" style="flex-shrink:0">#' + (rank+1) + '</span>' +
+        '<div style="flex:1;min-width:0"><a href="' + stravaActivityHref(r.activity_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(r.activity_name || 'Activity') + '</a><div class="row-meta">' + date + '</div></div>' +
+        '<div style="flex-shrink:0;font-weight:600;color:#58a6ff">' + formatElapsedClock(r.elapsed) + '</div>' +
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:4px">' + name + '</div>' + rows + '</div>';
+  });
+
+  listEl.innerHTML = sections.length
+    ? sections.join('')
+    : '<p style="font-size:13px;color:#7d8590">No distance records yet - use the scan above to build these out (it captures distance PRs from the same activity data as your Segments/KOM scan, at no extra API cost for standard distances).</p>';
 
   // Ultra distances (50K/100K) aren't in Strava's native best_efforts, so
   // they need their own small stream-based pass. The eligible set is
   // normally tiny (few or zero ultra-distance activities), so this runs
   // quietly in the background once per page load rather than needing a
-  // third manual scan button alongside the KOM and power curve ones.
+  // separate manual scan button.
   if (!ultraScanAttempted) {
     ultraScanAttempted = true;
     const token = await getToken();
