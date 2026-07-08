@@ -2404,20 +2404,37 @@ function renderMilesByYear() {
 }
 
 // Strava's own 14 power-curve durations (seconds), in order.
-const POWER_CURVE_DURATIONS = [5,10,30,60,300,600,1200,1800,3600,5400,7200,10800,14400,18000];
-const POWER_CURVE_LABELS    = ['5s','10s','30s','1min','5min','10min','20min','30min','1hr','90min','2hr','3hr','4hr','5hr'];
+const STRAVA_STANDARD_DURATIONS = [5,10,30,60,300,600,1200,1800,3600,5400,7200,10800,14400,18000];
+// Extra checkpoints layered onto the ride power curve only (per the rider's
+// own request for more granularity on short/mid-length efforts) - runs keep
+// just Strava's standard 14.
+const RIDE_EXTRA_DURATIONS = [20,120,180,480,900,2700];
+
+function labelForDuration(sec) {
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.round(sec/60) + 'min';
+  const hrs = sec/3600;
+  return hrs === 1 ? '1hr' : (Number.isInteger(hrs) ? hrs+'hr' : Math.round(sec/60)+'min');
+}
+
+function buildDurationSet(base, extra) {
+  const durations = [...new Set([...base, ...(extra||[])])].sort((a,b) => a-b);
+  return { durations, labels: durations.map(labelForDuration) };
+}
+
 // Streams calls are heavier (full time-series payload) than the KOM
 // scanner's activity-detail calls, so a smaller chunk than SCAN_CHUNK_SIZE.
 const POWER_SCAN_CHUNK_SIZE = 15;
 let powerScanRunning = false;
 
 // Bike and run power curves are scanned/stored completely separately (own
-// cache key, own progress) since they come from different activities and a
-// rider's watts have no relationship to their running watts. 'ride' keeps
-// the original cache key so existing scan progress isn't lost by this split.
+// cache key, own progress, own duration set) since they come from different
+// activities and a rider's watts have no relationship to their running
+// watts. 'ride' keeps the original cache key so existing scan progress
+// isn't lost by this split.
 const POWER_SPORTS = {
-  ride: { types: ['Ride','VirtualRide'], label: 'Rides', cacheKey: 'power_curve_scan_progress_v1' },
-  run:  { types: ['Run','TrailRun'],     label: 'Runs',  cacheKey: 'power_curve_scan_progress_v1_run' }
+  ride: Object.assign({ types: ['Ride','VirtualRide'], label: 'Rides', cacheKey: 'power_curve_scan_progress_v1' }, buildDurationSet(STRAVA_STANDARD_DURATIONS, RIDE_EXTRA_DURATIONS)),
+  run:  Object.assign({ types: ['Run','TrailRun'],     label: 'Runs',  cacheKey: 'power_curve_scan_progress_v1_run' }, buildDurationSet(STRAVA_STANDARD_DURATIONS, []))
 };
 let currentPowerSport = 'ride';
 
@@ -2436,10 +2453,20 @@ function setPowerCurveSport(sport) {
 
 async function getPowerScanProgress(athleteId, sport) {
   const cacheKey = POWER_SPORTS[sport].cacheKey;
+  const durationsKey = POWER_SPORTS[sport].durations.join(',');
   let progress = await getCached(athleteId, cacheKey, 365*24*60*60*1000);
-  if (!progress) return { scannedIds: [], top5: {}, complete: false };
+  if (!progress) return { scannedIds: [], top5: {}, complete: false, durationsKey };
   if (!progress.top5) progress.top5 = {};
   if (!progress.scannedIds) progress.scannedIds = [];
+
+  // The raw per-second stream isn't kept, only the derived top5 - so if the
+  // tracked duration set ever changes (e.g. new checkpoints added), already
+  // -scanned rides have no way to retroactively fill in the new categories
+  // without being re-fetched. Rather than leave those categories silently
+  // empty forever, detect the change and start a clean rescan automatically.
+  if (progress.durationsKey !== durationsKey) {
+    progress = { scannedIds: [], top5: {}, complete: false, durationsKey };
+  }
   return progress;
 }
 
@@ -2449,7 +2476,7 @@ function savePowerScanProgress(athleteId, sport, progress) {
 
 async function resetPowerScan(athleteId, sport) {
   if (!confirm(`This clears all ${POWER_SPORTS[sport].label.toLowerCase()} power curve scan progress and starts over from scratch. Continue?`)) return;
-  await savePowerScanProgress(athleteId, sport, { scannedIds: [], top5: {}, complete: false });
+  await savePowerScanProgress(athleteId, sport, { scannedIds: [], top5: {}, complete: false, durationsKey: POWER_SPORTS[sport].durations.join(',') });
   await renderPowerScanUI();
   renderPowerCurveFromScan();
 }
@@ -2525,8 +2552,9 @@ async function scanPowerCurveChunk(token, athleteId, sport) {
       const stream = await resp.json().catch(() => null);
       progress.scannedIds.push(ride.id);
       if (stream && stream.watts && stream.watts.data && stream.time && stream.time.data) {
-        const bests = computeBestPowerPerDuration(stream.time.data, stream.watts.data, POWER_CURVE_DURATIONS);
-        POWER_CURVE_DURATIONS.forEach((dur, i) => {
+        const sportDurations = POWER_SPORTS[sport].durations;
+        const bests = computeBestPowerPerDuration(stream.time.data, stream.watts.data, sportDurations);
+        sportDurations.forEach((dur, i) => {
           const watts = bests[i];
           if (watts <= 0) return;
           const list = progress.top5[dur] || [];
@@ -2610,12 +2638,14 @@ async function renderPowerCurveFromScan() {
   if (!athleteData) return;
   const sport = currentPowerSport;
   const isRide = sport === 'ride';
+  const durations = POWER_SPORTS[sport].durations;
+  const labels = POWER_SPORTS[sport].labels;
   const s = getSettings();
   const ftp = s.ftp || 220;
   const weight = s.weight || 75;
   const progress = await getPowerScanProgress(athleteData.id, sport);
 
-  const bestPowers = POWER_CURVE_DURATIONS.map(dur => {
+  const bestPowers = durations.map(dur => {
     const list = progress.top5[dur];
     return (list && list.length) ? list[0].watts : 0;
   });
@@ -2631,12 +2661,12 @@ async function renderPowerCurveFromScan() {
     // FTP and w/kg are cycling-specific concepts; for runs, just show watts
     // with a flat accent color rather than an FTP-relative threshold color.
     barsEl.innerHTML = bestPowers.map((p,i)=>{
-      if (!p) return `<div class="power-zone"><div class="pz-label">${POWER_CURVE_LABELS[i]}</div><div class="pz-bar"><div class="pz-fill" style="width:0%"></div></div><div class="pz-val" style="color:#444">--</div><div class="pz-wkg" style="color:#444">--</div></div>`;
+      if (!p) return `<div class="power-zone"><div class="pz-label">${labels[i]}</div><div class="pz-bar"><div class="pz-fill" style="width:0%"></div></div><div class="pz-val" style="color:#444">--</div><div class="pz-wkg" style="color:#444">--</div></div>`;
       const pct = Math.round(p/maxP*100);
       const color = isRide ? (p>=ftp ? '#FC4C02' : p>=ftp*0.9 ? '#C9A227' : '#3fb950') : '#58a6ff';
       const sub = isRide ? `<div class="pz-wkg">${(p/weight).toFixed(1)} w/kg</div>` : `<div class="pz-wkg">&nbsp;</div>`;
       return `<div class="power-zone">
-        <div class="pz-label">${POWER_CURVE_LABELS[i]}</div>
+        <div class="pz-label">${labels[i]}</div>
         <div class="pz-bar"><div class="pz-fill" style="width:${pct}%;background:${color}"></div></div>
         <div class="pz-val">${p}w</div>
         ${sub}
@@ -2648,10 +2678,10 @@ async function renderPowerCurveFromScan() {
     const datasets = [
       {label:'Best power',data:bestPowers.map(p=>p||null),borderColor:isRide?'#FC4C02':'#58a6ff',backgroundColor:isRide?'rgba(252,76,2,0.08)':'rgba(88,166,255,0.08)',borderWidth:2,pointBackgroundColor:isRide?'#FC4C02':'#58a6ff',pointRadius:3,tension:0.3,fill:true,spanGaps:true}
     ];
-    if (isRide) datasets.push({label:'FTP',data:POWER_CURVE_DURATIONS.map(()=>ftp),borderColor:'#C9A227',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false});
+    if (isRide) datasets.push({label:'FTP',data:durations.map(()=>ftp),borderColor:'#C9A227',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false});
     charts['power'] = new Chart(ctx, {
       type:'line',
-      data:{labels: POWER_CURVE_LABELS, datasets},
+      data:{labels, datasets},
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:false}},
         scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#7d8590',font:{size:11}}},
@@ -2659,14 +2689,16 @@ async function renderPowerCurveFromScan() {
     });
   }
 
-  renderPowerTop5List(progress);
+  renderPowerTop5List(progress, sport);
 }
 
-function renderPowerTop5List(progress) {
+function renderPowerTop5List(progress, sport) {
   const listEl = document.getElementById('power-top5-list');
   if (!listEl) return;
 
-  const sections = POWER_CURVE_DURATIONS.map((dur, i) => {
+  const durations = POWER_SPORTS[sport].durations;
+  const labels = POWER_SPORTS[sport].labels;
+  const sections = durations.map((dur, i) => {
     const entries = progress.top5[dur] || [];
     if (!entries.length) return '';
     const rows = entries.map((e, rank) => {
@@ -2677,7 +2709,7 @@ function renderPowerTop5List(progress) {
         '<div style="flex-shrink:0;font-weight:600;color:#FC4C02">' + e.watts + 'w</div>' +
       '</div>';
     }).join('');
-    return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:4px">' + POWER_CURVE_LABELS[i] + '</div>' + rows + '</div>';
+    return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:4px">' + labels[i] + '</div>' + rows + '</div>';
   }).filter(Boolean);
 
   listEl.innerHTML = sections.length
