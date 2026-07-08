@@ -1330,7 +1330,11 @@ async function loadAll(token) {
   let cacheIsStale = true;
 
   try {
-    const cacheData = await callEdge('list_activities', { athlete_id: athlete.id, limit: 500 });
+    // 3000 gives headroom well above the known all-time total (~1,418) - a
+    // hardcoded 500 here previously silently truncated every normal cached
+    // load to only the most recent 500 activities, well short of full
+    // history, even though a full resync correctly fetched everything.
+    const cacheData = await callEdge('list_activities', { athlete_id: athlete.id, limit: 3000 });
     cachedActivities = cacheData.activities || cacheData.rows || cacheData || [];
     if (!Array.isArray(cachedActivities)) cachedActivities = [];
   } catch(e) { console.log('Cache read error:', e); }
