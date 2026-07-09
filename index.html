@@ -70,6 +70,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .row-right { text-align: right; font-size: 13px; color: #e6edf3; }
 .row-right small { display: block; font-size: 11px; color: #7d8590; }
 
+/* TWIRL-DOWN (collapsible top-N lists: shows #1 collapsed, rest on expand) */
+.twirl summary { list-style: none; cursor: pointer; }
+.twirl summary::-webkit-details-marker { display: none; }
+.twirl-chevron { display: inline-block; transition: transform 0.15s; color: #7d8590; flex-shrink: 0; }
+.twirl[open] .twirl-chevron { transform: rotate(90deg); }
+
 /* BADGES */
 .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
 .b-gold { background: #2d2000; color: #C9A227; border: 1px solid #C9A227; }
@@ -432,7 +438,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
 
   <div class="card">
-    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M4 19h16M4 15l4-4 4 3 6-8"/></svg>Distance records</div></div>
+    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M4 19h16M4 15l4-4 4 3 6-8"/></svg>Personal Bests</div></div>
     <div id="distance-sport-toggle" style="display:flex;gap:4px;margin-bottom:10px">
       <button class="nav-btn active" data-sport="run" onclick="setDistanceSport('run')">Runs</button>
       <button class="nav-btn" data-sport="ride" onclick="setDistanceSport('ride')">Rides</button>
@@ -2833,19 +2839,10 @@ function renderPowerTop5List(progress, sport) {
 
   const durations = POWER_SPORTS[sport].durations;
   const labels = POWER_SPORTS[sport].labels;
-  const sections = durations.map((dur, i) => {
-    const entries = progress.top5[dur] || [];
-    if (!entries.length) return '';
-    const rows = entries.map((e, rank) => {
-      const date = e.start_date ? new Date(e.start_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-      return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
-        '<span class="badge b-blue" style="flex-shrink:0">#' + (rank+1) + '</span>' +
-        '<div style="flex:1;min-width:0"><a href="' + stravaActivityHref(e.activity_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(e.activity_name || 'Activity') + '</a><div class="row-meta">' + date + '</div></div>' +
-        '<div style="flex-shrink:0;font-weight:600;color:#FC4C02">' + e.watts + 'w</div>' +
-      '</div>';
-    }).join('');
-    return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:4px">' + labels[i] + '</div>' + rows + '</div>';
-  }).filter(Boolean);
+  const accent = sport === 'ride' ? '#FC4C02' : '#58a6ff';
+  const sections = durations.map((dur, i) =>
+    twirlSection(labels[i], progress.top5[dur], e => e.watts + 'w', accent)
+  ).filter(Boolean);
 
   listEl.innerHTML = sections.length
     ? sections.join('')
@@ -3105,6 +3102,43 @@ async function renderDistanceScanUI() {
   }
 }
 
+// ==================== SHARED TWIRL-DOWN TOP-N WIDGET ====================
+// Used by both Personal Bests (distance records) and the power curve's
+// all-time-bests list: shows just the #1 result collapsed, with a chevron
+// to twirl down and reveal the rest of the top N. Takes a generic list of
+// {activity_id, activity_name, start_date|date, ...} entries plus a
+// formatter for the value column, so the same widget works for both
+// elapsed-time and watts data.
+function twirlRow(rank, entry, formatValue, valueColor) {
+  const dateStr = new Date(entry.start_date || entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
+    '<span class="badge b-blue" style="flex-shrink:0">#' + rank + '</span>' +
+    '<div style="flex:1;min-width:0"><a href="' + stravaActivityHref(entry.activity_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none" onclick="event.stopPropagation()">' + escapeHTML(entry.activity_name || 'Activity') + '</a><div class="row-meta">' + dateStr + '</div></div>' +
+    '<div style="flex-shrink:0;font-weight:600;color:' + valueColor + '">' + formatValue(entry) + '</div>' +
+  '</div>';
+}
+
+function twirlSection(label, entries, formatValue, valueColor) {
+  if (!entries || !entries.length) return '';
+  const topRow = twirlRow(1, entries[0], formatValue, valueColor);
+
+  if (entries.length === 1) {
+    return '<div style="margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:2px">' + label + '</div>' + topRow + '</div>';
+  }
+
+  const restRows = entries.slice(1).map((e, i) => twirlRow(i+2, e, formatValue, valueColor)).join('');
+  return '<details class="twirl" style="margin-bottom:8px">' +
+    '<summary style="display:flex;align-items:flex-start;gap:8px">' +
+      '<span class="twirl-chevron" style="margin-top:7px">▸</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:2px">' + label + '</div>' +
+        topRow +
+      '</div>' +
+    '</summary>' +
+    '<div style="padding-left:22px">' + restRows + '</div>' +
+  '</details>';
+}
+
 async function renderDistanceRecords() {
   const listEl = document.getElementById('distance-records-list');
   if (!listEl || !athleteData) return;
@@ -3119,17 +3153,9 @@ async function renderDistanceRecords() {
   const extra = Object.keys(records).filter(name => !order.includes(name) && records[name] && records[name].length).sort();
   const names = [...known, ...extra];
 
-  const sections = names.map(name => {
-    const rows = records[name].map((r, rank) => {
-      const date = new Date(r.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
-      return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
-        '<span class="badge b-blue" style="flex-shrink:0">#' + (rank+1) + '</span>' +
-        '<div style="flex:1;min-width:0"><a href="' + stravaActivityHref(r.activity_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(r.activity_name || 'Activity') + '</a><div class="row-meta">' + date + '</div></div>' +
-        '<div style="flex-shrink:0;font-weight:600;color:#58a6ff">' + formatElapsedClock(r.elapsed) + '</div>' +
-      '</div>';
-    }).join('');
-    return '<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:600;color:#7d8590;margin-bottom:4px">' + name + '</div>' + rows + '</div>';
-  });
+  const sections = names.map(name =>
+    twirlSection(name, records[name], e => formatElapsedClock(e.elapsed), '#58a6ff')
+  );
 
   listEl.innerHTML = sections.length
     ? sections.join('')
