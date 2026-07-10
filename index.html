@@ -2241,7 +2241,10 @@ async function renderLastActivityHighlight() {
       <div class="row-meta">${date}${location ? ' &middot; ' + escapeHTML(location) : ''}</div>
     </div>
     ${statsHtml}
-    <div id="last-activity-achievements"></div>`;
+    <div id="last-activity-achievements"></div>
+    <div id="last-activity-map" style="height:240px;border-radius:8px;overflow:hidden;margin-top:10px;display:none"></div>`;
+
+  renderLastActivityRouteMap(a);
 
   if (isRide || isRun) {
     const badges = await checkActivityAchievements(a);
@@ -2250,6 +2253,34 @@ async function renderLastActivityHighlight() {
       achEl.innerHTML = badges.map(b => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#e6edf3"><span style="font-size:16px">${b.icon}</span>${escapeHTML(b.text)}</div>`).join('');
     }
   }
+}
+
+// Small standalone Leaflet map for the highlight card's route preview - a
+// separate map instance from the main Map page's eldoradoMap, so it doesn't
+// interfere with that page's state (layers, bounds-fit-once flag, etc).
+// The polyline comes straight off the activity object (backfilled from the
+// activity-geometry cache during loadAll if it wasn't already present from
+// a live fetch), so no extra API call is needed to draw this.
+let lastActivityMap = null;
+function renderLastActivityRouteMap(activity) {
+  const container = document.getElementById('last-activity-map');
+  if (!container || typeof L === 'undefined') return;
+
+  const poly = activity.map && (activity.map.summary_polyline || activity.map.polyline);
+  const points = poly ? decodePolyline(poly) : [];
+  if (!points.length) { container.style.display = 'none'; return; }
+
+  container.style.display = '';
+  if (lastActivityMap) { lastActivityMap.remove(); lastActivityMap = null; }
+  lastActivityMap = L.map('last-activity-map', { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+  }).addTo(lastActivityMap);
+
+  const isRun = activity.type === 'Run' || activity.type === 'TrailRun';
+  const line = L.polyline(points, { color: isRun ? '#58a6ff' : '#FC4C02', weight: 4 }).addTo(lastActivityMap);
+  lastActivityMap.fitBounds(line.getBounds(), { padding: [16, 16] });
+  setTimeout(function(){ if (lastActivityMap) lastActivityMap.invalidateSize(); }, 50);
 }
 
 // Live-checks a single activity against the power-curve and distance-record
