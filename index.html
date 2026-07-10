@@ -2215,11 +2215,24 @@ async function renderLastActivityHighlight() {
     statTile('Relative Effort', a.suffer_score || '--') +
   `</div>`;
 
-  if (a.average_watts > 0 || a.average_heartrate > 0) {
-    statsHtml += `<div class="g4" style="margin-bottom:10px">` +
-      (a.average_watts ? statTile('Avg Power', Math.round(a.average_watts)+' w', a.max_watts ? 'max '+Math.round(a.max_watts)+' w' : '') : '') +
-      (a.average_heartrate ? statTile('Avg HR', Math.round(a.average_heartrate)+' bpm', a.max_heartrate ? 'max '+Math.round(a.max_heartrate)+' bpm' : '') : '') +
-    `</div>`;
+  // Strava reports running cadence as steps/min for a single leg (half true
+  // cadence) - doubled here to match what Strava's own site displays.
+  const secondaryTiles = [];
+  if (isRide && a.average_speed) secondaryTiles.push(statTile('Avg Speed', (a.average_speed*2.23694).toFixed(1)+' mph'));
+  if (isRun && a.average_speed) {
+    const paceSec = 1609.34 / a.average_speed;
+    const pm = Math.floor(paceSec/60), ps = Math.round(paceSec%60);
+    secondaryTiles.push(statTile('Avg Pace', pm+':'+String(ps).padStart(2,'0')+'/mi'));
+  }
+  if (a.average_cadence) {
+    const cadenceVal = isRun ? Math.round(a.average_cadence*2) : Math.round(a.average_cadence);
+    secondaryTiles.push(statTile('Avg Cadence', cadenceVal + (isRun ? ' spm' : ' rpm')));
+  }
+  if (a.average_watts) secondaryTiles.push(statTile('Avg Power', Math.round(a.average_watts)+' w', a.max_watts ? 'max '+Math.round(a.max_watts)+' w' : ''));
+  if (a.average_heartrate) secondaryTiles.push(statTile('Avg HR', Math.round(a.average_heartrate)+' bpm', a.max_heartrate ? 'max '+Math.round(a.max_heartrate)+' bpm' : ''));
+
+  if (secondaryTiles.length) {
+    statsHtml += `<div class="g4" style="margin-bottom:10px">` + secondaryTiles.join('') + `</div>`;
   }
 
   body.innerHTML = `
@@ -4986,6 +4999,9 @@ function renderActivities() {
   const runs = allActivities.filter(a=>a.type==='Run'||a.type==='TrailRun');
   const avgRidePower = rides.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
   const avgRunPower = runs.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
+  // Strava's stats endpoint only exposes a "biggest ride" distance, not a
+  // longest-run equivalent, so this is computed directly from loaded activities.
+  const longestRun = runs.reduce((best, r) => (!best || r.distance > best.distance) ? r : best, null);
 
   const rideAllTimeMi = rideTotal ? Math.round(rideTotal.distance/1609.34).toLocaleString() : '--';
   const rideAllTimeElev = rideTotal ? Math.round(rideTotal.elevation_gain*3.281/1000).toLocaleString() : '--';
@@ -5000,10 +5016,9 @@ function renderActivities() {
   const totalsEl = document.getElementById('activity-totals');
   if (totalsEl) {
     totalsEl.innerHTML = `
-      <div class="metric"><div class="metric-label">All-time rides</div><div class="metric-val">${rideTotal ? rideTotal.count.toLocaleString() : '--'}</div><div class="metric-sub">${rideTotal ? Math.round(rideTotal.distance/1609.34).toLocaleString() + ' mi total' : 'from recent'}</div></div>
-      <div class="metric"><div class="metric-label">All-time runs</div><div class="metric-val">${runTotal ? runTotal.count.toLocaleString() : '--'}</div><div class="metric-sub">${runTotal ? Math.round(runTotal.distance/1609.34).toLocaleString() + ' mi total' : 'from recent'}</div></div>
       <div class="metric"><div class="metric-label">Biggest ride</div><div class="metric-val">${stats && stats.biggest_ride_distance ? Math.round(stats.biggest_ride_distance/1609.34) + ' mi' : '--'}</div><div class="metric-sub">all time</div></div>
       <div class="metric"><div class="metric-label">Biggest climb</div><div class="metric-val">${stats && stats.biggest_climb_elevation_gain ? Math.round(stats.biggest_climb_elevation_gain*3.281).toLocaleString() + ' ft' : '--'}</div><div class="metric-sub">single ride</div></div>
+      <div class="metric"><div class="metric-label">Longest run</div><div class="metric-val">${longestRun ? '<a href="'+stravaActivityHref(longestRun.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none">'+(longestRun.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${longestRun ? new Date(longestRun.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
       <div class="metric"><div class="metric-label">All-time ride miles</div><div class="metric-val">${rideAllTimeMi}</div><div class="metric-sub">${rideTotal?rideTotal.count.toLocaleString()+' total rides':''}</div></div>
       <div class="metric"><div class="metric-label">All-time ride elevation</div><div class="metric-val">${rideAllTimeElev}k</div><div class="metric-sub">feet climbed all time</div></div>
       <div class="metric"><div class="metric-label">YTD ride miles</div><div class="metric-val">${rideYtdMi}</div><div class="metric-sub">${rideYtdElev}k ft this year</div></div>
