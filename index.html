@@ -324,6 +324,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 <!-- DASHBOARD -->
 <div id="section-dashboard" class="section">
+  <div class="card" id="last-activity-card" style="margin-bottom:1.5rem;border:1px solid #FC4C02;display:none">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Last synced activity</div>
+    </div>
+    <div id="last-activity-body"></div>
+  </div>
+
   <div class="g2" id="streak-cards" style="margin-bottom:1.5rem"></div>
 
   <div class="g4">
@@ -393,8 +400,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <!-- PERFORMANCE -->
 <div id="section-performance" class="section">
   <div class="section-header"><h2>Performance analysis</h2><p>Power curve, heart rate efficiency, personal records, and year-over-year comparison.</p></div>
-
-  <div class="g4" id="pr-cards"></div>
 
   <div class="g2">
     <div class="card" style="margin-bottom:0">
@@ -1588,10 +1593,23 @@ async function getScanProgress(athleteId) {
   // now each is a top-10 array. Normalize any leftover single-object entries
   // (e.g. 50K/100K recorded before this change) into one-element arrays
   // rather than losing that data.
+  //
+  // Also self-heals a real duplicate bug: 50K/100K could get pushed both
+  // from Strava's best_efforts (which does cover ultra distances on long
+  // enough runs, contrary to an earlier assumption) and from the dedicated
+  // stream-based ultra pass, producing two entries for the same activity
+  // (confirmed via a Backyard Ultra 120K run showing up twice under "50K").
+  // Keeping only the fastest entry per activity_id fixes existing data
+  // without requiring a rescan.
   Object.keys(progress.distanceRecords).forEach(name => {
-    if (!Array.isArray(progress.distanceRecords[name])) {
-      progress.distanceRecords[name] = [progress.distanceRecords[name]];
-    }
+    let list = progress.distanceRecords[name];
+    if (!Array.isArray(list)) list = [list];
+    const byActivity = {};
+    list.forEach(e => {
+      const existing = byActivity[e.activity_id];
+      if (!existing || e.elapsed < existing.elapsed) byActivity[e.activity_id] = e;
+    });
+    progress.distanceRecords[name] = Object.values(byActivity).sort((a,b) => a.elapsed - b.elapsed).slice(0, 10);
   });
 
   // One-time self-heal for data scanned before the rank-vs-category fix
@@ -1776,11 +1794,18 @@ async function scanKomChunk(token, athleteId) {
 
       if (needsDistance && detail.best_efforts) {
         // Standard-distance top-10s (400m through Marathon) - Strava computes
-        // these directly on run activities, no streams call needed. Ultra
-        // distances (50K/100K) aren't included here; those are handled by
-        // a separate stream-based pass since Strava doesn't compute them.
+        // these directly on run activities, no streams call needed. 50K/100K
+        // are explicitly excluded here even though Strava's best_efforts can
+        // actually include them on long enough runs (confirmed: a 120K ultra
+        // produced a duplicate "50K" entry - one from here, one from the
+        // dedicated stream-based ultra pass below) - those two distances are
+        // owned exclusively by that pass so each activity contributes at
+        // most one entry per distance.
         detail.best_efforts.forEach(e => {
-          const list = progress.distanceRecords[e.name] || [];
+          if (ULTRA_DISTANCES.some(u => u.name === e.name)) return;
+          // Defensive dedup: replace any existing entry for this same
+          // activity rather than appending a second one (e.g. on a rescan).
+          const list = (progress.distanceRecords[e.name] || []).filter(x => x.activity_id !== ride.id);
           list.push({
             activity_id: ride.id, activity_name: ride.name,
             elapsed: e.elapsed_time, distance: e.distance, date: ride.start_date
@@ -2096,6 +2121,8 @@ function renderDashboard() {
   const rides = allActivities;
   const metrics = computeMetrics(rides);
 
+  renderLastActivityHighlight();
+
   // CTL/ATL/TSB
   document.getElementById('ctl-val').textContent = metrics.ctl;
   document.getElementById('atl-val').textContent = metrics.atl;
@@ -2151,6 +2178,160 @@ function activityRow(r) {
     </div>
     <div class="row-right">${mi} mi<small>${elev}</small></div>
   </div>`;
+}
+
+// ==================== LAST SYNCED ACTIVITY HIGHLIGHT ====================
+// Front-and-center dashboard card for the most recent activity. Basic stats
+// render immediately from data already loaded; the achievement badges
+// (cracked all-time/this-year power, or a new top-10 distance PR) are
+// checked live via a single streams fetch for just this one activity rather
+// than waiting for the background scanners to reach it, and the result is
+// merged into the same progress stores those scanners use so this activity
+// doesn't get redundantly re-fetched later.
+async function renderLastActivityHighlight() {
+  const card = document.getElementById('last-activity-card');
+  const body = document.getElementById('last-activity-body');
+  if (!card || !body || !allActivities.length) return;
+
+  const a = allActivities[0]; // allActivities is sorted newest-first
+  card.style.display = '';
+
+  const isRide = a.type === 'Ride' || a.type === 'VirtualRide';
+  const isRun = a.type === 'Run' || a.type === 'TrailRun';
+  const mi = (a.distance/1609.34).toFixed(2);
+  const h = Math.floor(a.moving_time/3600), m = Math.floor((a.moving_time%3600)/60);
+  const movingTime = h>0 ? `${h}h ${m}m` : `${m}m`;
+  const elev = a.total_elevation_gain ? Math.round(a.total_elevation_gain*3.281).toLocaleString()+' ft' : '--';
+  const date = new Date(a.start_date).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric', year:'numeric'});
+  const location = [a.location_city, a.location_state].filter(Boolean).join(', ');
+  const typeTag = isRun ? '<span class="badge b-run">RUN</span>' : isRide ? '<span class="badge b-blue">RIDE</span>' : `<span class="badge" style="background:#21262d;color:#7d8590">${escapeHTML(a.type||'')}</span>`;
+
+  const statTile = (label, val, sub) => `<div class="metric"><div class="metric-label">${label}</div><div class="metric-val">${val}</div><div class="metric-sub">${sub||''}</div></div>`;
+
+  let statsHtml = `<div class="g4" style="margin-bottom:10px">` +
+    statTile('Distance', mi + ' mi') +
+    statTile('Moving Time', movingTime) +
+    statTile('Elevation', elev) +
+    statTile('Relative Effort', a.suffer_score || '--') +
+  `</div>`;
+
+  if (a.average_watts > 0 || a.average_heartrate > 0) {
+    statsHtml += `<div class="g4" style="margin-bottom:10px">` +
+      (a.average_watts ? statTile('Avg Power', Math.round(a.average_watts)+' w', a.max_watts ? 'max '+Math.round(a.max_watts)+' w' : '') : '') +
+      (a.average_heartrate ? statTile('Avg HR', Math.round(a.average_heartrate)+' bpm', a.max_heartrate ? 'max '+Math.round(a.max_heartrate)+' bpm' : '') : '') +
+    `</div>`;
+  }
+
+  body.innerHTML = `
+    <div style="margin-bottom:10px">
+      <div style="font-size:17px;font-weight:700"><a href="${stravaActivityHref(a.id)}" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">${escapeHTML(a.name || 'Untitled activity')}</a> ${typeTag}</div>
+      <div class="row-meta">${date}${location ? ' &middot; ' + escapeHTML(location) : ''}</div>
+    </div>
+    ${statsHtml}
+    <div id="last-activity-achievements"></div>`;
+
+  if (isRide || isRun) {
+    const badges = await checkActivityAchievements(a);
+    const achEl = document.getElementById('last-activity-achievements');
+    if (achEl && badges.length) {
+      achEl.innerHTML = badges.map(b => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#e6edf3"><span style="font-size:16px">${b.icon}</span>${escapeHTML(b.text)}</div>`).join('');
+    }
+  }
+}
+
+// Live-checks a single activity against the power-curve and distance-record
+// progress stores, merging its results in along the way (marking it scanned
+// so the background scanners skip it later). Standard running distances
+// (400m-Marathon) aren't checked here since those come from Strava's
+// best_efforts on the activity-detail endpoint rather than a stream, and
+// will show up once the Segments/Personal-Bests scan naturally reaches this
+// activity (which - being the newest - is next in that scan's queue anyway).
+async function checkActivityAchievements(activity) {
+  const badges = [];
+  if (!athleteData) return badges;
+  const isRide = activity.type === 'Ride' || activity.type === 'VirtualRide';
+  const sport = isRide ? 'ride' : 'run';
+  const token = await getToken();
+  if (!token) return badges;
+
+  try {
+    const resp = await fetch(`https://www.strava.com/api/v3/activities/${activity.id}/streams?keys=watts,time,distance&resolution=high&key_by_type=true`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!resp.ok) return badges;
+    const stream = await resp.json();
+
+    // ---- Power: all-time and this-year, per duration ----
+    if (activity.average_watts > 0 && stream.watts && stream.watts.data && stream.time && stream.time.data) {
+      const durations = POWER_SPORTS[sport].durations;
+      const labels = POWER_SPORTS[sport].labels;
+      const bests = computeBestPowerPerDuration(stream.time.data, stream.watts.data, durations);
+      const progress = await getPowerScanProgress(athleteData.id, sport);
+      const year = new Date(activity.start_date).getFullYear();
+      let bestAllTimeLabel = null, bestAllTimeWatts = 0, anyYear = false;
+
+      durations.forEach((dur, i) => {
+        const watts = bests[i];
+        if (watts <= 0) return;
+        const list = (progress.top5[dur] || []).filter(x => x.activity_id !== activity.id);
+        const priorAllTime = list.length ? list[0].watts : 0;
+        const isNewAllTime = watts > priorAllTime;
+        list.push({ watts, activity_id: activity.id, activity_name: activity.name, start_date: activity.start_date });
+        list.sort((x,y) => y.watts - x.watts);
+        progress.top5[dur] = list.slice(0, 5);
+
+        if (!progress.byYear[dur]) progress.byYear[dur] = {};
+        const priorYearEntry = progress.byYear[dur][year];
+        const priorYearBest = (priorYearEntry && priorYearEntry.activity_id !== activity.id) ? priorYearEntry.watts : 0;
+        if (watts > priorYearBest) {
+          progress.byYear[dur][year] = { watts, activity_id: activity.id, activity_name: activity.name, start_date: activity.start_date };
+          if (!isNewAllTime) anyYear = true;
+        }
+
+        if (isNewAllTime && watts > bestAllTimeWatts) { bestAllTimeWatts = watts; bestAllTimeLabel = labels[i]; }
+      });
+
+      if (!progress.scannedIds.includes(activity.id)) progress.scannedIds.push(activity.id);
+      await savePowerScanProgress(athleteData.id, sport, progress);
+
+      if (bestAllTimeLabel) badges.push({ icon: '🏆', text: `New all-time best power at ${bestAllTimeLabel} (${bestAllTimeWatts}w)` });
+      else if (anyYear) badges.push({ icon: '📅', text: `New ${year} best power on at least one duration` });
+    }
+
+    // ---- Distance: stream-computed checkpoints only (full list for rides, ultra-only for runs) ----
+    if (stream.distance && stream.distance.data && stream.time && stream.time.data) {
+      const checkpoints = isRide ? RIDE_DISTANCE_CHECKPOINTS : ULTRA_DISTANCES;
+      const distProgress = isRide ? await getBikeDistanceProgress(athleteData.id) : await getScanProgress(athleteData.id);
+      let bestRank = null, bestName = null;
+
+      checkpoints.forEach(({ name, meters }) => {
+        if (activity.distance < meters) return;
+        const elapsed = bestTimeForDistance(stream.distance.data, stream.time.data, meters);
+        if (elapsed == null) return;
+        const list = (distProgress.distanceRecords[name] || []).filter(x => x.activity_id !== activity.id);
+        list.push({ activity_id: activity.id, activity_name: activity.name, elapsed, distance: meters, date: activity.start_date });
+        list.sort((x,y) => x.elapsed - y.elapsed);
+        const newList = list.slice(0, 10);
+        distProgress.distanceRecords[name] = newList;
+        const rank = newList.findIndex(x => x.activity_id === activity.id);
+        if (rank !== -1 && (bestRank === null || rank < bestRank)) { bestRank = rank; bestName = name; }
+      });
+
+      if (isRide) {
+        if (!distProgress.scannedIds.includes(activity.id)) distProgress.scannedIds.push(activity.id);
+        await saveBikeDistanceProgress(athleteData.id, distProgress);
+      } else {
+        if (!distProgress.ultraScannedIds.includes(activity.id)) distProgress.ultraScannedIds.push(activity.id);
+        await saveScanProgress(athleteData.id, distProgress);
+      }
+
+      if (bestRank !== null) {
+        badges.push({ icon: bestRank === 0 ? '🥇' : '🎖️', text: `#${bestRank+1} fastest ${bestName} ever` });
+      }
+    }
+  } catch(e) {
+    console.log('Activity achievement check error:', e);
+  }
+
+  return badges;
 }
 
 function renderCoaching(metrics, allActs) {
@@ -2347,30 +2528,10 @@ function renderPerformance() {
   renderHeatmap();
 }
 
+// The ride mileage/elevation/power metric tiles that used to live here moved
+// to the Activities page (alongside the equivalent running stats) - this
+// now just drives the "Miles by year" chart.
 function renderPRCards() {
-  const s = getSettings();
-  const runs = allActivities.filter(a=>a.type==='Run'||a.type==='TrailRun');
-  const rides = allActivities.filter(a=>a.type==='Ride'||a.type==='VirtualRide');
-  const avgPower = rides.filter(r=>r.average_watts>0).reduce((s,r,_,a)=>s+r.average_watts/a.length,0);
-
-  const statsRide = (athleteStats && athleteStats.all_ride_totals);
-  const statsRun = (athleteStats && athleteStats.all_run_totals);
-  const ytdRide = (athleteStats && athleteStats.ytd_ride_totals);
-  const ytdRun = (athleteStats && athleteStats.ytd_run_totals);
-
-  const totalAllTimeMi = statsRide ? Math.round(statsRide.distance/1609.34).toLocaleString() : '--';
-  const totalAllTimeElev = statsRide ? Math.round(statsRide.elevation_gain*3.281/1000).toLocaleString() : '--';
-  const ytdMi = ytdRide ? Math.round(ytdRide.distance/1609.34).toLocaleString() : '--';
-  const ytdElev = ytdRide ? Math.round(ytdRide.elevation_gain*3.281/1000).toLocaleString() : '--';
-  const totalRunMi = statsRun ? Math.round(statsRun.distance/1609.34).toLocaleString() : Math.round(runs.reduce((s,r)=>s+r.distance,0)/1609.34);
-
-  document.getElementById('pr-cards').innerHTML = `
-    <div class="metric"><div class="metric-label">All-time ride miles</div><div class="metric-val">${totalAllTimeMi}</div><div class="metric-sub">${statsRide?statsRide.count.toLocaleString()+' total rides':''}</div></div>
-    <div class="metric"><div class="metric-label">All-time elevation</div><div class="metric-val">${totalAllTimeElev}k</div><div class="metric-sub">feet climbed all time</div></div>
-    <div class="metric"><div class="metric-label">YTD ride miles</div><div class="metric-val">${ytdMi}</div><div class="metric-sub">${ytdElev}k ft this year</div></div>
-    <div class="metric"><div class="metric-label">Avg power</div><div class="metric-val">${avgPower>0?Math.round(avgPower)+' w':'--'}</div><div class="metric-sub">${avgPower>0?(avgPower/s.weight).toFixed(1)+' w/kg':'no power data'}</div></div>`;
-
-  // Miles by year chart
   renderMilesByYear();
 }
 
@@ -2518,6 +2679,17 @@ async function getPowerScanProgress(athleteId, sport) {
   if (progress.durationsKey !== durationsKey) {
     progress = freshPowerProgress(sport);
   }
+
+  // Defensive per-activity dedup, same reasoning as the distance-records
+  // progress: keeps only the best entry per activity_id per duration.
+  Object.keys(progress.top5).forEach(dur => {
+    const byActivity = {};
+    progress.top5[dur].forEach(e => {
+      const existing = byActivity[e.activity_id];
+      if (!existing || e.watts > existing.watts) byActivity[e.activity_id] = e;
+    });
+    progress.top5[dur] = Object.values(byActivity).sort((a,b) => b.watts - a.watts).slice(0, 5);
+  });
   return progress;
 }
 
@@ -2609,7 +2781,7 @@ async function scanPowerCurveChunk(token, athleteId, sport) {
         sportDurations.forEach((dur, i) => {
           const watts = bests[i];
           if (watts <= 0) return;
-          const list = progress.top5[dur] || [];
+          const list = (progress.top5[dur] || []).filter(x => x.activity_id !== ride.id);
           list.push({ watts, activity_id: ride.id, activity_name: ride.name, start_date: ride.start_date });
           list.sort((a,b) => b.watts - a.watts);
           progress.top5[dur] = list.slice(0, 5);
@@ -2884,6 +3056,17 @@ async function getBikeDistanceProgress(athleteId) {
   if (!progress) return { scannedIds: [], distanceRecords: {}, complete: false };
   if (!progress.scannedIds) progress.scannedIds = [];
   if (!progress.distanceRecords) progress.distanceRecords = {};
+
+  // Same defensive per-activity dedup as the run distance progress - keeps
+  // only the fastest entry per activity_id per checkpoint.
+  Object.keys(progress.distanceRecords).forEach(name => {
+    const byActivity = {};
+    progress.distanceRecords[name].forEach(e => {
+      const existing = byActivity[e.activity_id];
+      if (!existing || e.elapsed < existing.elapsed) byActivity[e.activity_id] = e;
+    });
+    progress.distanceRecords[name] = Object.values(byActivity).sort((a,b) => a.elapsed - b.elapsed).slice(0, 10);
+  });
   return progress;
 }
 
@@ -2929,7 +3112,7 @@ async function scanBikeDistanceChunk(token, athleteId) {
           if (ride.distance < meters) return; // this ride never covers this checkpoint
           const elapsed = bestTimeForDistance(stream.distance.data, stream.time.data, meters);
           if (elapsed == null) return;
-          const list = progress.distanceRecords[name] || [];
+          const list = (progress.distanceRecords[name] || []).filter(x => x.activity_id !== ride.id);
           list.push({ activity_id: ride.id, activity_name: ride.name, elapsed, distance: meters, date: ride.start_date });
           list.sort((a,b) => a.elapsed - b.elapsed);
           progress.distanceRecords[name] = list.slice(0, 10);
@@ -3000,7 +3183,7 @@ async function scanUltraDistancesChunk(token, athleteId) {
         ULTRA_DISTANCES.forEach(({ name, meters }) => {
           const elapsed = bestTimeForDistance(stream.distance.data, stream.time.data, meters);
           if (elapsed == null) return;
-          const list = progress.distanceRecords[name] || [];
+          const list = (progress.distanceRecords[name] || []).filter(x => x.activity_id !== act.id);
           list.push({ activity_id: act.id, activity_name: act.name, elapsed, distance: meters, date: act.start_date });
           list.sort((a,b) => a.elapsed - b.elapsed);
           progress.distanceRecords[name] = list.slice(0, 10);
@@ -4792,16 +4975,43 @@ function searchActivities(query) {
 }
 
 function renderActivities() {
+  const s = getSettings();
   const stats = athleteStats;
   const rideTotal = stats && stats.all_ride_totals;
   const runTotal = stats && stats.all_run_totals;
+  const ytdRide = stats && stats.ytd_ride_totals;
+  const ytdRun = stats && stats.ytd_run_totals;
+
+  const rides = allActivities.filter(a=>a.type==='Ride'||a.type==='VirtualRide');
+  const runs = allActivities.filter(a=>a.type==='Run'||a.type==='TrailRun');
+  const avgRidePower = rides.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
+  const avgRunPower = runs.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
+
+  const rideAllTimeMi = rideTotal ? Math.round(rideTotal.distance/1609.34).toLocaleString() : '--';
+  const rideAllTimeElev = rideTotal ? Math.round(rideTotal.elevation_gain*3.281/1000).toLocaleString() : '--';
+  const rideYtdMi = ytdRide ? Math.round(ytdRide.distance/1609.34).toLocaleString() : '--';
+  const rideYtdElev = ytdRide ? Math.round(ytdRide.elevation_gain*3.281/1000).toLocaleString() : '--';
+
+  const runAllTimeMi = runTotal ? Math.round(runTotal.distance/1609.34).toLocaleString() : '--';
+  const runAllTimeElev = runTotal ? Math.round(runTotal.elevation_gain*3.281/1000).toLocaleString() : '--';
+  const runYtdMi = ytdRun ? Math.round(ytdRun.distance/1609.34).toLocaleString() : '--';
+  const runYtdElev = ytdRun ? Math.round(ytdRun.elevation_gain*3.281/1000).toLocaleString() : '--';
+
   const totalsEl = document.getElementById('activity-totals');
   if (totalsEl) {
     totalsEl.innerHTML = `
       <div class="metric"><div class="metric-label">All-time rides</div><div class="metric-val">${rideTotal ? rideTotal.count.toLocaleString() : '--'}</div><div class="metric-sub">${rideTotal ? Math.round(rideTotal.distance/1609.34).toLocaleString() + ' mi total' : 'from recent'}</div></div>
       <div class="metric"><div class="metric-label">All-time runs</div><div class="metric-val">${runTotal ? runTotal.count.toLocaleString() : '--'}</div><div class="metric-sub">${runTotal ? Math.round(runTotal.distance/1609.34).toLocaleString() + ' mi total' : 'from recent'}</div></div>
       <div class="metric"><div class="metric-label">Biggest ride</div><div class="metric-val">${stats && stats.biggest_ride_distance ? Math.round(stats.biggest_ride_distance/1609.34) + ' mi' : '--'}</div><div class="metric-sub">all time</div></div>
-      <div class="metric"><div class="metric-label">Biggest climb</div><div class="metric-val">${stats && stats.biggest_climb_elevation_gain ? Math.round(stats.biggest_climb_elevation_gain*3.281).toLocaleString() + ' ft' : '--'}</div><div class="metric-sub">single ride</div></div>`;
+      <div class="metric"><div class="metric-label">Biggest climb</div><div class="metric-val">${stats && stats.biggest_climb_elevation_gain ? Math.round(stats.biggest_climb_elevation_gain*3.281).toLocaleString() + ' ft' : '--'}</div><div class="metric-sub">single ride</div></div>
+      <div class="metric"><div class="metric-label">All-time ride miles</div><div class="metric-val">${rideAllTimeMi}</div><div class="metric-sub">${rideTotal?rideTotal.count.toLocaleString()+' total rides':''}</div></div>
+      <div class="metric"><div class="metric-label">All-time ride elevation</div><div class="metric-val">${rideAllTimeElev}k</div><div class="metric-sub">feet climbed all time</div></div>
+      <div class="metric"><div class="metric-label">YTD ride miles</div><div class="metric-val">${rideYtdMi}</div><div class="metric-sub">${rideYtdElev}k ft this year</div></div>
+      <div class="metric"><div class="metric-label">Avg ride power</div><div class="metric-val">${avgRidePower>0?Math.round(avgRidePower)+' w':'--'}</div><div class="metric-sub">${avgRidePower>0?(avgRidePower/s.weight).toFixed(1)+' w/kg':'no power data'}</div></div>
+      <div class="metric"><div class="metric-label">All-time run miles</div><div class="metric-val">${runAllTimeMi}</div><div class="metric-sub">${runTotal?runTotal.count.toLocaleString()+' total runs':''}</div></div>
+      <div class="metric"><div class="metric-label">All-time run elevation</div><div class="metric-val">${runAllTimeElev}k</div><div class="metric-sub">feet climbed all time</div></div>
+      <div class="metric"><div class="metric-label">YTD run miles</div><div class="metric-val">${runYtdMi}</div><div class="metric-sub">${runYtdElev}k ft this year</div></div>
+      <div class="metric"><div class="metric-label">Avg run power</div><div class="metric-val">${avgRunPower>0?Math.round(avgRunPower)+' w':'--'}</div><div class="metric-sub">${avgRunPower>0?(avgRunPower/s.weight).toFixed(1)+' w/kg':'no power data'}</div></div>`;
   }
   renderActivityList();
 }
@@ -5500,12 +5710,31 @@ function resetEldoradoMapTiles() {
   if (eldoradoMap) addEldoradoBaseTiles();
 }
 
+// Home base (Smithtown, NY) - the map's default view, and the reference
+// point for filtering out geographic outliers (e.g. a trip ride/run far
+// from home) so they can't drag the default auto-fit zoom out to cover half
+// the country. A single far-off activity used to blow away the zoom the
+// user carefully set every time bounds were recalculated.
+const ELDORADO_HOME_LATLNG = [40.86, -73.20];
+const ELDORADO_HOME_RADIUS_MILES = 60;
+
+function milesBetweenLatLng(a, b) {
+  const dLat = a[0] - b[0];
+  const dLng = (a[1] - b[1]) * Math.cos(b[0] * Math.PI / 180);
+  return Math.sqrt(dLat*dLat + dLng*dLng) * 69; // ~69 miles per degree latitude
+}
+
+function isNearEldoradoHome(latlng) {
+  return milesBetweenLatLng(latlng, ELDORADO_HOME_LATLNG) <= ELDORADO_HOME_RADIUS_MILES;
+}
+
 function initEldoradoMap() {
   const el = document.getElementById('eldorado-map');
   if (!el || typeof L === 'undefined') return;
   if (eldoradoMap) { setTimeout(function(){ eldoradoMap.invalidateSize(); }, 50); return; }
-  eldoradoMap = L.map('eldorado-map', { scrollWheelZoom: false }).setView([40.86, -73.20], 11);
+  eldoradoMap = L.map('eldorado-map', { scrollWheelZoom: false }).setView(ELDORADO_HOME_LATLNG, 11);
   addEldoradoBaseTiles();
+  addEldoradoLocateControl();
   setEldoradoMapDistanceFilter(eldoradoMapState.segmentDistanceIndex || 0);
   eldoradoMapLayers.achievements = L.layerGroup().addTo(eldoradoMap);
   eldoradoMapLayers.heat = L.layerGroup().addTo(eldoradoMap);
@@ -5514,6 +5743,51 @@ function initEldoradoMap() {
   eldoradoMapLayers.route = L.layerGroup().addTo(eldoradoMap);
   eldoradoMap.on('click', onMapClickForRouteBuilder);
   setTimeout(function(){ eldoradoMap.invalidateSize(); }, 150);
+}
+
+function addEldoradoLocateControl() {
+  const LocateControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function() {
+      const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+      const btn = L.DomUtil.create('a', '', div);
+      btn.href = '#';
+      btn.title = 'Show my current location';
+      btn.innerHTML = '📍';
+      btn.style.width = '30px';
+      btn.style.height = '30px';
+      btn.style.lineHeight = '30px';
+      btn.style.textAlign = 'center';
+      btn.style.fontSize = '16px';
+      L.DomEvent.on(btn, 'click', function(e) {
+        L.DomEvent.preventDefault(e);
+        L.DomEvent.stopPropagation(e);
+        locateEldoradoUser();
+      });
+      return div;
+    }
+  });
+  eldoradoMap.addControl(new LocateControl());
+}
+
+let eldoradoLocateMarker = null;
+function locateEldoradoUser() {
+  if (!navigator.geolocation) {
+    showToast('⚠️', 'Not supported', 'Your browser does not support geolocation.');
+    return;
+  }
+  setMapStatus('Locating you...');
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if (eldoradoLocateMarker) eldoradoMap.removeLayer(eldoradoLocateMarker);
+    eldoradoLocateMarker = L.circleMarker(latlng, { radius: 8, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.9, weight: 2 }).addTo(eldoradoMap);
+    eldoradoLocateMarker.bindPopup('You are here').openPopup();
+    eldoradoMap.setView(latlng, 13);
+    setMapStatus('');
+  }, function(err) {
+    setMapStatus('');
+    showToast('⚠️', 'Location unavailable', err.message || 'Could not get your location.');
+  }, { enableHighAccuracy: true, timeout: 10000 });
 }
 
 function setMapStatus(msg) {
@@ -6473,9 +6747,16 @@ async function renderEldoradoMap() {
   // (e.g. hiding bike) would collapse the visible bounds and zoom out to
   // wherever the remaining data is - including outlier trips halfway across
   // the country - blowing away the zoom the user carefully set.
+  //
+  // Points are also filtered to near home before fitting: a single distant
+  // trip ride/run (or achievement recorded on one) used to drag fitBounds
+  // out to cover the whole country. If nothing is near home, the map just
+  // keeps its default Smithtown view from initEldoradoMap instead of
+  // fitting to wherever the outlier data happens to be.
   if (!eldoradoMapBoundsFit) {
-    if (bounds.length) {
-      try { eldoradoMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 }); eldoradoMapBoundsFit = true; } catch(e) {}
+    const nearHomeBounds = bounds.filter(isNearEldoradoHome);
+    if (nearHomeBounds.length) {
+      try { eldoradoMap.fitBounds(nearHomeBounds, { padding: [24, 24], maxZoom: 13 }); eldoradoMapBoundsFit = true; } catch(e) {}
     } else if (heatStats.pointCount) {
       const heatBounds = [];
       allActivities.forEach(function(a) {
@@ -6483,7 +6764,8 @@ async function renderEldoradoMap() {
         const pts = decodePolyline(poly);
         if (pts.length) { heatBounds.push(pts[0]); heatBounds.push(pts[pts.length-1]); }
       });
-      if (heatBounds.length) { eldoradoMap.fitBounds(heatBounds, { padding: [24, 24], maxZoom: 12 }); eldoradoMapBoundsFit = true; }
+      const nearHomeHeatBounds = heatBounds.filter(isNearEldoradoHome);
+      if (nearHomeHeatBounds.length) { eldoradoMap.fitBounds(nearHomeHeatBounds, { padding: [24, 24], maxZoom: 12 }); eldoradoMapBoundsFit = true; }
     }
   }
 
