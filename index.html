@@ -148,7 +148,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .wx-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 8px; margin-bottom:1.5rem; }
 @media(max-width:720px){ .wx-grid{grid-template-columns:repeat(4,1fr);} }
 .wx-day { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:10px 8px; text-align:center; }
-.wx-day.today { border-color:#C9A227; }
 .wx-dow { font-size:11px; color:#7d8590; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
 .wx-icon { font-size:24px; margin:4px 0; }
 .wx-hi { font-size:15px; font-weight:600; color:#e6edf3; }
@@ -401,6 +400,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div id="section-performance" class="section">
   <div class="section-header"><h2>Performance analysis</h2><p>Power curve, heart rate efficiency, personal records, and year-over-year comparison.</p></div>
 
+  <div class="card">
+    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Year-over-year comparison</div></div>
+    <table class="yoy-table" id="yoy-table"><thead><tr><th>Metric</th><th>This year</th><th>Last year</th><th>Change</th></tr></thead><tbody id="yoy-body"></tbody></table>
+  </div>
+
   <div class="g2">
     <div class="card" style="margin-bottom:0">
       <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Power curve — best efforts</div></div>
@@ -453,11 +457,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div id="distance-scan-controls" style="margin-bottom:12px"></div>
     <div id="distance-records-list"></div>
   </div>
+</div>
 
-  <div class="card">
-    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Year-over-year comparison</div></div>
-    <table class="yoy-table" id="yoy-table"><thead><tr><th>Metric</th><th>This year</th><th>Last year</th><th>Change</th></tr></thead><tbody id="yoy-body"></tbody></table>
-  </div>
+<!-- ACTIVITIES -->
+<div id="section-activities" class="section">
+  <div class="section-header"><h2>Activities</h2><p>Full history with splits, best efforts, and segment achievements.</p></div>
+  <div class="g4" id="activity-totals"></div>
 
   <div class="card">
     <div class="card-title">
@@ -480,12 +485,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="legend-item"><span class="legend-dot" style="background:#21262d;border:1px solid #444"></span>Rest</div>
     </div>
   </div>
-</div>
 
-<!-- ACTIVITIES -->
-<div id="section-activities" class="section">
-  <div class="section-header"><h2>Activities</h2><p>Full history with splits, best efforts, and segment achievements.</p></div>
-  <div class="g4" id="activity-totals"></div>
   <div class="card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>All recent activities</div>
@@ -1015,6 +1015,7 @@ function mapCachedRowToActivity(row) {
     average_heartrate: row.average_heartrate || null,
     max_heartrate: row.max_heartrate || null,
     average_speed: row.average_speed || null,
+    average_cadence: row.average_cadence || null,
     suffer_score: row.suffer_score || null,
     achievement_count: row.achievement_count || 0,
     gear_id: row.gear_id || null,
@@ -1077,6 +1078,7 @@ function syncActivitiesToSupabase(activities, athlete_id) {
         average_heartrate: a.average_heartrate || null,
         max_heartrate: a.max_heartrate || null,
         average_speed: a.average_speed || null,
+        average_cadence: a.average_cadence || null,
         suffer_score: a.suffer_score || null,
         achievement_count: a.achievement_count || 0,
         gear_id: a.gear_id || null,
@@ -1209,20 +1211,18 @@ function showSection(name) {
   if (name === 'goals') { try { renderGoals(); } catch(e) { console.error('renderGoals:', e); } }
   if (name === 'zones') { try { renderZones(); } catch(e) { console.error('renderZones:', e); } }
   if (name === 'settings') { try { loadSettingsUI(); } catch(e) { console.error('loadSettingsUI:', e); } }
-  if (name === 'activities' && allActivities.length) { try { renderActivities(); } catch(e) { console.error('renderActivities:', e); } }
+  if (name === 'activities' && allActivities.length) { try { renderActivities(); renderHeatmap(); } catch(e) { console.error('renderActivities:', e); } }
   if (name === 'gear' && allActivities.length) { try { renderGear(); } catch(e) { console.error('renderGear:', e); } }
   if (name === 'segments' && allActivities.length) { try { renderKomScanUI(); } catch(e) { console.error('renderKomScanUI:', e); } }
   if (name === 'collaborators' && allActivities.length) { try { renderCollaborators(collabFilter||'all'); } catch(e) { console.error('renderCollaborators:', e); } }
   if (name === 'performance' && allActivities.length) { 
     setTimeout(function() { 
-      try { 
+      try {
         renderPRCards();
         renderYOY();
-        renderCalendar();
         renderPowerCurve();
         renderDistanceRecords();
         renderAeroChart();
-        renderHeatmap();
       } catch(e) { console.error('renderPerformance:', e); }
     }, 500);
   }
@@ -4399,7 +4399,7 @@ function renderWeather(data) {
     const precip = daily.precipitation_probability_max[i];
     const icon = wxIcon(daily.weathercode[i]);
     const windColor = wind > 20 ? '#f85149' : wind > 12 ? '#d29922' : '#58a6ff';
-    return `<div class="wx-day${i===0?' today':''}" onclick="showDayDetail(${i})" style="cursor:pointer" id="wx-day-${i}">
+    return `<div class="wx-day" onclick="showDayDetail(${i})" style="cursor:pointer" id="wx-day-${i}">
       <div class="wx-dow">${dow}</div>
       <div class="wx-icon">${icon}</div>
       <div class="wx-hi">${hi}°</div>
@@ -4999,8 +4999,10 @@ function renderActivities() {
   const runs = allActivities.filter(a=>a.type==='Run'||a.type==='TrailRun');
   const avgRidePower = rides.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
   const avgRunPower = runs.filter(r=>r.average_watts>0).reduce((sum,r,_,arr)=>sum+r.average_watts/arr.length,0);
-  // Strava's stats endpoint only exposes a "biggest ride" distance, not a
-  // longest-run equivalent, so this is computed directly from loaded activities.
+  // Computed directly from loaded activities (rather than
+  // stats.biggest_ride_distance) so we have the activity itself for a date
+  // and link, not just a bare number - also keeps ride and run consistent.
+  const biggestRide = rides.reduce((best, r) => (!best || r.distance > best.distance) ? r : best, null);
   const longestRun = runs.reduce((best, r) => (!best || r.distance > best.distance) ? r : best, null);
 
   const rideAllTimeMi = rideTotal ? Math.round(rideTotal.distance/1609.34).toLocaleString() : '--';
@@ -5016,7 +5018,7 @@ function renderActivities() {
   const totalsEl = document.getElementById('activity-totals');
   if (totalsEl) {
     totalsEl.innerHTML = `
-      <div class="metric"><div class="metric-label">Biggest ride</div><div class="metric-val">${stats && stats.biggest_ride_distance ? Math.round(stats.biggest_ride_distance/1609.34) + ' mi' : '--'}</div><div class="metric-sub">all time</div></div>
+      <div class="metric"><div class="metric-label">Biggest ride</div><div class="metric-val">${biggestRide ? '<a href="'+stravaActivityHref(biggestRide.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none">'+(biggestRide.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${biggestRide ? new Date(biggestRide.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
       <div class="metric"><div class="metric-label">Biggest climb</div><div class="metric-val">${stats && stats.biggest_climb_elevation_gain ? Math.round(stats.biggest_climb_elevation_gain*3.281).toLocaleString() + ' ft' : '--'}</div><div class="metric-sub">single ride</div></div>
       <div class="metric"><div class="metric-label">Longest run</div><div class="metric-val">${longestRun ? '<a href="'+stravaActivityHref(longestRun.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none">'+(longestRun.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${longestRun ? new Date(longestRun.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
       <div class="metric"><div class="metric-label">All-time ride miles</div><div class="metric-val">${rideAllTimeMi}</div><div class="metric-sub">${rideTotal?rideTotal.count.toLocaleString()+' total rides':''}</div></div>
