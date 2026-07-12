@@ -430,7 +430,20 @@ body.native-app .container { margin-left: 0; padding-top: 4.5rem; }
           <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Ride advisory</div></div>
           <div id="wx-advisory"></div>
           <div style="margin-top:1rem">
-            <div style="font-size:12px;font-weight:600;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Best tailwind segments near you (10mi of 11787)</div>
+            <div style="font-size:12px;font-weight:600;color:#7d8590;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Best tailwind segments near you</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+              <select id="tailwind-sport" onchange="renderTailwindSegments(currentWxDayIdx)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;color:#e6edf3;font-size:12px">
+                <option value="ride" selected>Ride</option>
+                <option value="run">Run</option>
+              </select>
+              <select id="tailwind-radius" onchange="renderTailwindSegments(currentWxDayIdx)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;color:#e6edf3;font-size:12px">
+                <option value="5">5 mi</option>
+                <option value="10" selected>10 mi</option>
+                <option value="25">25 mi</option>
+              </select>
+              <input type="text" id="tailwind-zip" placeholder="Zip code" value="11787" inputmode="numeric" maxlength="5" oninput="onTailwindZipInput()" style="width:76px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;color:#e6edf3;font-size:12px" />
+              <button id="tailwind-locate-btn" onclick="useMyLocationForTailwind()" style="background:transparent;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#7d8590;cursor:pointer;font-size:11px">📍 Use my location</button>
+            </div>
             <div id="wx-tailwind-segments" style="font-size:12px;color:#7d8590">Loading...</div>
           </div>
           <div class="card-title" style="margin-top:1.5rem"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>7-day wind speeds</div></div>
@@ -6880,13 +6893,54 @@ function renderHeatLayer() {
 }
 
 // ==================== WEATHER: TAILWIND SEGMENTS ====================
-// Surfaces the 3 completed segments near home (10mi of zip 11787) with the
-// most favorable tailwind component for whichever forecast day is selected -
-// reuses the same enrichedCache/geometry/wind-component math already built
-// for the map's wind-advantage overlay, but scans every segment the athlete
-// has ever recorded a best time on (allSegmentBests), not just KOMs/Top10s.
-const ZIP_11787_LATLNG = [40.7298, -73.2097];
-const TAILWIND_SEARCH_RADIUS_MILES = 10;
+// Surfaces the 3 completed segments near a chosen center point (zip code or
+// GPS) with the most favorable tailwind component for whichever forecast day
+// is selected - reuses the same enrichedCache/geometry/wind-component math
+// already built for the map's wind-advantage overlay, but scans every
+// segment the athlete has ever recorded a best time on (allSegmentBests),
+// not just KOMs/Top10s, and can be filtered to ride or run.
+let currentWxDayIdx = 0;
+let tailwindCenter = { lat: 40.7298, lng: -73.2097, zip: '11787' }; // 11787 (Islip, NY)
+let tailwindZipDebounce = null;
+
+async function geocodeZip(zip) {
+  try {
+    const res = await fetch('https://api.zippopotam.us/us/' + encodeURIComponent(zip));
+    if (!res.ok) return null;
+    const data = await res.json();
+    const place = data.places && data.places[0];
+    if (!place) return null;
+    return { lat: parseFloat(place.latitude), lng: parseFloat(place.longitude) };
+  } catch (e) { return null; }
+}
+
+function onTailwindZipInput() {
+  clearTimeout(tailwindZipDebounce);
+  const zip = (document.getElementById('tailwind-zip').value || '').trim();
+  tailwindZipDebounce = setTimeout(async function() {
+    if (!/^\d{5}$/.test(zip)) return;
+    const latlng = await geocodeZip(zip);
+    if (latlng) {
+      tailwindCenter = { lat: latlng.lat, lng: latlng.lng, zip: zip };
+      renderTailwindSegments(currentWxDayIdx);
+    }
+  }, 500);
+}
+
+function useMyLocationForTailwind() {
+  const btn = document.getElementById('tailwind-locate-btn');
+  if (!navigator.geolocation) { if (btn) btn.textContent = 'Location unavailable'; return; }
+  if (btn) btn.textContent = 'Locating...';
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    tailwindCenter = { lat: pos.coords.latitude, lng: pos.coords.longitude, zip: null };
+    const zipInput = document.getElementById('tailwind-zip');
+    if (zipInput) zipInput.value = '';
+    if (btn) btn.textContent = '📍 Using your location';
+    renderTailwindSegments(currentWxDayIdx);
+  }, function() {
+    if (btn) btn.textContent = '📍 Use my location';
+  }, { timeout: 8000 });
+}
 
 async function computeTailwindSegments(dayIdx) {
   const data = window._wxData;
@@ -6900,15 +6954,35 @@ async function computeTailwindSegments(dayIdx) {
   const progress = await getScanProgress(athleteData.id);
   const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
 
+  const sportSel = document.getElementById('tailwind-sport');
+  const sport = sportSel ? sportSel.value : 'ride';
+  const radiusSel = document.getElementById('tailwind-radius');
+  const radius = radiusSel ? parseFloat(radiusSel.value) : 10;
+  const center = [tailwindCenter.lat, tailwindCenter.lng];
+
+  // Strava's achievements only report an exact rank for the top 10 on a
+  // segment (koms = rank 1, top10s = rank 2-10) - anything below that comes
+  // back from the API with no numeric position at all. Exact rank up to 99
+  // would need Strava's full leaderboard endpoint, which is restricted to
+  // subscriber-tier API access, so anything not in this map just reads
+  // "Outside Top 10" rather than showing a fabricated number.
+  const rankBySegmentId = {};
+  (progress.koms || []).forEach(function(k) { rankBySegmentId[k.segment_id] = 1; });
+  (progress.top10s || []).forEach(function(t) {
+    if (rankBySegmentId[t.segment_id] == null || t.rank < rankBySegmentId[t.segment_id]) rankBySegmentId[t.segment_id] = t.rank;
+  });
+
   const results = [];
   Object.values(progress.allSegmentBests || {}).forEach(function(seg) {
+    const segSport = sportGroupForType(seg.activity_type);
+    if (sport === 'ride' && segSport !== 'ride') return;
+    if (sport === 'run' && segSport !== 'run') return;
     const detail = enrichedCache[seg.segment_id];
     const points = pointsForMapEntry(null, detail);
     if (points.length < 2) return;
     const start = points[0], end = points[points.length - 1];
-    const nearHome = milesBetweenLatLng(start, ZIP_11787_LATLNG) <= TAILWIND_SEARCH_RADIUS_MILES ||
-                      milesBetweenLatLng(end, ZIP_11787_LATLNG) <= TAILWIND_SEARCH_RADIUS_MILES;
-    if (!nearHome) return;
+    const nearCenter = milesBetweenLatLng(start, center) <= radius || milesBetweenLatLng(end, center) <= radius;
+    if (!nearCenter) return;
     const bearing = bearingBetween(start, end);
     const diff = angleDiff(bearing, windTo);
     const component = windSpeedMph * Math.cos(diff * Math.PI / 180);
@@ -6916,7 +6990,8 @@ async function computeTailwindSegments(dayIdx) {
       segment_id: seg.segment_id,
       segment_name: seg.segment_name,
       distanceMi: detail && detail.distance ? detail.distance / 1609.34 : null,
-      component: component
+      component: component,
+      rank: rankBySegmentId[seg.segment_id] != null ? rankBySegmentId[seg.segment_id] : null
     });
   });
 
@@ -6925,21 +7000,27 @@ async function computeTailwindSegments(dayIdx) {
 }
 
 async function renderTailwindSegments(dayIdx) {
+  currentWxDayIdx = dayIdx;
   const el = document.getElementById('wx-tailwind-segments');
   if (!el) return;
   el.textContent = 'Loading...';
   try {
     const top = await computeTailwindSegments(dayIdx);
     if (!top.length) {
-      el.innerHTML = '<div style="color:#7d8590">No completed segments with a tailwind found near 11787 for this day yet — finish the Segments scan for full coverage.</div>';
+      el.innerHTML = '<div style="color:#7d8590">No completed segments with a tailwind found in this radius yet — finish the Segments scan for full coverage, or widen the distance.</div>';
       return;
     }
-    el.innerHTML = top.map(function(s, i) {
+    el.innerHTML = top.map(function(s) {
       const label = s.component >= 0 ? ('Tailwind ' + Math.round(s.component) + ' mph') : ('Headwind ' + Math.abs(Math.round(s.component)) + ' mph');
       const color = s.component >= 10 ? '#3fb950' : s.component >= 0 ? '#d29922' : '#f85149';
+      const rankBadge = s.rank === 1
+        ? '<span class="badge b-gold" style="margin-right:6px">#1</span>'
+        : s.rank != null
+          ? '<span class="badge b-blue" style="margin-right:6px">#' + s.rank + '</span>'
+          : '<span style="font-size:10px;color:#7d8590;margin-right:6px">Outside Top 10</span>';
       return '<div class="row">' +
         '<div>' +
-          '<div class="row-name">' + (i + 1) + '. <a href="' + stravaSegmentHref(s.segment_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(s.segment_name || 'Segment') + '</a></div>' +
+          '<div class="row-name">' + rankBadge + '<a href="' + stravaSegmentHref(s.segment_id) + '" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none">' + escapeHTML(s.segment_name || 'Segment') + '</a></div>' +
           (s.distanceMi ? '<div class="row-meta">' + s.distanceMi.toFixed(2) + ' mi</div>' : '') +
         '</div>' +
         '<div class="row-right" style="color:' + color + '">' + label + '</div>' +
