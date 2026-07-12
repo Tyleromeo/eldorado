@@ -13,7 +13,7 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
 
 /* NAV (left sidebar on desktop) */
-.nav { background: #161b22; border-right: 1px solid #30363d; padding: 1.5rem 1.25rem; width: 200px; height: 100vh; display: flex; flex-direction: column; gap: 1.75rem; position: fixed; left: 0; top: 0; z-index: 9999; overflow-y: auto; }
+.nav { background: #161b22; border-right: 1px solid #30363d; padding: 1.5rem 1.25rem; width: 200px; height: 100vh; display: flex; flex-direction: column; gap: 1.75rem; position: fixed; left: 0; top: 0; z-index: 9999; overflow-y: auto; transform: translateZ(0); -webkit-transform: translateZ(0); backface-visibility: hidden; }
 .logo { font-family: Georgia, serif; font-size: 20px; font-weight: 700; color: #C9A227; letter-spacing: 2px; cursor: pointer; line-height: 1.3; }
 .logo span { display: block; font-size: 12px; font-weight: 400; color: #7d8590; letter-spacing: 0; margin-left: 0; font-family: -apple-system, sans-serif; }
 .nav-links { display: flex; flex-direction: column; gap: 4px; }
@@ -175,7 +175,7 @@ body.native-app .container { margin-left: 0; padding-top: 3.25rem; }
 .wx-arrow { display:inline-block; font-size:14px; }
 .wx-precip { font-size:10px; color:#7d8590; margin-top:2px; }
 .wx-hourly { display:grid; grid-template-columns:repeat(8,1fr); gap:6px; }
-@media(max-width:720px){ .wx-hourly{grid-template-columns:repeat(4,1fr);} }
+@media(max-width:720px){ .wx-hourly{grid-template-columns:repeat(6,1fr);} }
 .wx-hr { background:#0d1117; border-radius:8px; padding:8px 4px; text-align:center; }
 .wx-hr-time { font-size:10px; color:#7d8590; margin-bottom:3px; }
 .wx-hr-temp { font-size:13px; font-weight:600; color:#e6edf3; }
@@ -359,14 +359,14 @@ body.native-app .container { margin-left: 0; padding-top: 3.25rem; }
   <div class="card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Fitness trend</div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap" id="trend-filters">
-        <button class="nav-btn" onclick="setTrendRange(7, this)">7d</button>
-        <button class="nav-btn" onclick="setTrendRange(30, this)">1mo</button>
-        <button class="nav-btn" onclick="setTrendRange(60, this)">2mo</button>
-        <button class="nav-btn active" onclick="setTrendRange(84, this)">3mo</button>
-        <button class="nav-btn" onclick="setTrendRange(168, this)">6mo</button>
-        <button class="nav-btn" onclick="setTrendRange('ytd', this)">YTD</button>
-      </div>
+      <select id="trend-range-select" onchange="setTrendRange(this.value)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#e6edf3;font-size:12px">
+        <option value="7">7d</option>
+        <option value="30">1mo</option>
+        <option value="60">2mo</option>
+        <option value="84" selected>3mo</option>
+        <option value="168">6mo</option>
+        <option value="ytd">YTD</option>
+      </select>
     </div>
     <div class="chart-wrap" style="height:240px"><canvas id="fitness-chart"></canvas></div>
     <div class="chart-legend">
@@ -2614,17 +2614,10 @@ function renderCoaching(metrics, allActs) {
 // FITNESS CHART
 let currentTrendRange = 84;
 
-function setTrendRange(range, el) {
-  currentTrendRange = range;
-  document.querySelectorAll('#trend-filters .nav-btn').forEach(b => b.classList.remove('active'));
-  if (el) el.classList.add('active');
-  else {
-    document.querySelectorAll('#trend-filters .nav-btn').forEach(b => {
-      if (b.textContent === range+'d' || b.textContent === range+'mo' ||
-          (range==='ytd' && b.textContent==='YTD') ||
-          (range===84 && b.textContent==='3mo')) b.classList.add('active');
-    });
-  }
+function setTrendRange(range) {
+  currentTrendRange = (range === 'ytd') ? 'ytd' : Number(range);
+  const sel = document.getElementById('trend-range-select');
+  if (sel) sel.value = String(range);
   renderFitnessChart(allActivities);
 }
 
@@ -4387,13 +4380,11 @@ async function loadClubEvents() {
       return;
     }
 
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     document.getElementById('events-list').innerHTML = upcoming.slice(0,6).map(e => {
       const d = e.nextDate;
       const isToday = d.toDateString() === now.toDateString();
       const tomorrow = new Date(now); tomorrow.setDate(now.getDate()+1);
       const isTomorrow = d.toDateString() === tomorrow.toDateString();
-      const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : days[d.getDay()];
       const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       const timeStr = d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       const daysUntil = Math.ceil((d - now) / 86400000);
@@ -4410,7 +4401,6 @@ async function loadClubEvents() {
           <div class="row-name" style="display:flex;align-items:center;gap:6px">
             <span style="font-size:10px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor};border-radius:4px;padding:1px 6px;font-weight:600">${typeLabel}</span>
             <a href="${stravaClubHref(e)}" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none" title="Opens this club's main page on Strava - exact event links aren't reliably constructable from the API, and /group_events sub-paths 404 on Strava's current site">${escapeHTML(e.title || 'Untitled event')}</a>
-            ${isToday||isTomorrow ? `<span class="badge b-gold">${dayLabel}</span>` : ''}
           </div>
           <div class="row-meta">${dateStr} at ${timeStr} &middot; ${escapeHTML(e.club_name || 'Club')}</div>
           ${desc ? `<div style="font-size:11px;color:#444d56;margin-top:2px">${escapeHTML(descShort)}${desc.length>80?'...':''}</div>` : ''}
