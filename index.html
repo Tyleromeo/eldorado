@@ -70,9 +70,9 @@ body.native-app .container { margin-left: 0; padding-top: 3.25rem; }
 @media(max-width:720px){
   .g4{grid-template-columns:repeat(2,1fr);} .g3{grid-template-columns:repeat(2,1fr);} .g2{grid-template-columns:1fr;}
   .nav-links{display:none;}
-  .nav{ position:sticky; top:0; left:auto; width:100%; height:56px; flex-direction:row; align-items:center; justify-content:space-between; border-right:none; border-bottom:1px solid #30363d; padding:0 1.5rem; overflow:visible; }
+  .nav{ position:fixed; top:0; left:0; right:0; width:100%; height:56px; flex-direction:row; align-items:center; justify-content:space-between; border-right:none; border-bottom:1px solid #30363d; padding:0 1.5rem; overflow:visible; z-index:100; }
   .nav-bottom{ flex-direction:row; margin-top:0; align-items:center; gap:14px; }
-  .container{ margin-left:0; }
+  .container{ margin-left:0; padding-top:calc(56px + 1.5rem); }
 }
 
 .metric { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem 1.125rem; }
