@@ -31,16 +31,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .section { display: none; }
 .section.active { display: block; }
 
-/* Native iOS app: page links are dropped from the top bar since the app's
-   own bottom tabs already cover that navigation - but the logo, slogan,
-   and connection status stay visible. body.native-app is set from a
-   WKUserScript injected before this page's own scripts run - see
-   WebView.swift - so it's not a width guess, and holds regardless of
-   orientation (landscape never brings the sidebar back). */
-body.native-app .nav-links { display: none !important; }
-body.native-app .nav { position: fixed; top: 0; left: 0; right: 0; width: 100%; height: auto; flex-direction: row; align-items: center; justify-content: space-between; background: #161b22; border-right: none; border-bottom: 1px solid #30363d; padding: 0.65rem 1.1rem; overflow: visible; z-index: 9999; }
-body.native-app .nav-bottom { flex-direction: row; margin-top: 0; }
-body.native-app .container { margin-left: 0; padding-top: 4.5rem; }
+/* Native iOS app: the in-page top bar is hidden entirely. WKWebView kept
+   letting page content scroll over position:fixed elements no matter how
+   that was hardened here (z-index, transform, disabling rubber-band bounce
+   natively) - it's a WKWebView compositing quirk, not something fixable
+   from CSS alone. A real native SwiftUI bar (logo/slogan/settings) now
+   lives above the WebView in ContentView.swift instead, which can't be
+   scrolled over because it isn't part of the scrollable web content at
+   all. body.native-app is set from a WKUserScript injected before this
+   page's own scripts run - see WebView.swift - so it's not a width guess,
+   and holds regardless of orientation. */
+body.native-app .nav { display: none !important; }
+body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
 /* CONNECT */
 .connect-wrap { max-width: 460px; margin: 3rem auto; text-align: center; }
@@ -1391,6 +1393,7 @@ async function loadAll(token) {
 
   document.getElementById('dot').className = 'dot on';
   document.getElementById('auth-name').textContent = athlete.firstname + ' ' + athlete.lastname;
+  notifyNativeAuthState(athlete.firstname + ' ' + athlete.lastname);
 
   // Activities - cache-first strategy to reduce Strava API load.
   // 1. Read cached activities from Supabase first (no Strava call needed).
@@ -2001,6 +2004,19 @@ function activityLocalDateKey(activity) {
   // suffixed like UTC) - its date portion IS the correct local calendar
   // day, no further timezone conversion needed or wanted.
   return (activity.start_date_local || activity.start_date).split('T')[0];
+}
+
+// The in-page top nav is hidden entirely inside the native iOS app - a real
+// native SwiftUI bar shows the logo/slogan/settings instead, since WKWebView
+// kept letting page content scroll over position:fixed elements no matter
+// how that was hardened in CSS. This just tells the native bar who's
+// connected; see WebView.swift's WKScriptMessageHandler for the other side.
+function notifyNativeAuthState(name) {
+  try {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.eldoradoNative) {
+      window.webkit.messageHandlers.eldoradoNative.postMessage({ type: 'auth', name: name || null });
+    }
+  } catch (e) {}
 }
 
 // ==================== NOTIFICATIONS ====================
