@@ -80,6 +80,15 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   .card{ padding:1rem; }
 }
 
+/* COLLAPSIBLE CARDS - click the title to expand/collapse. Collapse state is
+   persisted per-key in localStorage so the page comes back the way it was
+   left, which is the whole point of collapsing a long page. */
+.collapse-head { cursor: pointer; user-select: none; }
+.collapse-head:hover .collapse-caret { color: #e6edf3; }
+.collapse-caret { display: inline-block; color: #7d8590; font-size: 10px; margin-right: 6px; transition: transform 0.15s; }
+.collapsed .collapse-caret { transform: rotate(-90deg); }
+.collapsed .collapse-body { display: none; }
+
 .metric { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem 1.125rem; }
 .metric-label { font-size: 11px; color: #7d8590; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 .metric-val { font-size: 26px; font-weight: 600; color: #e6edf3; line-height: 1.1; }
@@ -507,39 +516,48 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
         <button class="nav-btn active" data-sport="ride" onclick="setAeroSport('ride')">Rides</button>
         <button class="nav-btn" data-sport="run" onclick="setAeroSport('run')">Runs</button>
       </div>
-      <div id="aero-filters" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="nav-btn active" onclick="renderAeroFor(7)">7d</button>
-        <button class="nav-btn" onclick="renderAeroFor(30)">1mo</button>
-        <button class="nav-btn" onclick="renderAeroFor(60)">2mo</button>
-        <button class="nav-btn" onclick="renderAeroFor(90)">3mo</button>
-        <button class="nav-btn" onclick="renderAeroFor(180)">6mo</button>
-        <button class="nav-btn" onclick="renderAeroFor('ytd')">YTD</button>
+      <div style="margin-bottom:12px">
+        <select id="aero-range-select" onchange="renderAeroFor(this.value)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#e6edf3;font-size:12px">
+          <option value="7">1 Week</option>
+          <option value="30" selected>1 Month</option>
+          <option value="60">2 Months</option>
+          <option value="90">3 Months</option>
+          <option value="180">6 Months</option>
+          <option value="365">1 Year</option>
+          <option value="ytd">Year to Date</option>
+        </select>
       </div>
       <div class="chart-wrap chart-wrap-md" style="height:180px;position:relative"><canvas id="aero-chart"></canvas></div>
       <div id="aero-insight" style="margin-top:10px;font-size:12px;color:#7d8590;line-height:1.5"></div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M17 3H7v6a5 5 0 0 0 10 0V3z"/></svg>All-time power bests — top 5 per duration</div></div>
-    <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Real best-sustained-power efforts computed from your actual power-meter data streams, not estimates. Scan below to build this out across your full history.</div>
-    <div id="power-top5-list"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M4 19h16M4 15l4-4 4 3 6-8"/></svg>Personal Bests</div></div>
-    <div id="distance-sport-toggle" style="display:flex;gap:4px;margin-bottom:10px">
-      <button class="nav-btn active" data-sport="run" onclick="setDistanceSport('run')">Runs</button>
-      <button class="nav-btn" data-sport="ride" onclick="setDistanceSport('ride')">Rides</button>
+  <div class="card" id="collapse-power-bests">
+    <div class="card-title collapse-head" onclick="toggleCollapse('power-bests')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M17 3H7v6a5 5 0 0 0 10 0V3z"/></svg>All-time power bests — top 5 per duration</div></div>
+    <div class="collapse-body">
+      <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Real best-sustained-power efforts computed from your actual power-meter data streams, not estimates. Scan below to build this out across your full history.</div>
+      <div id="power-top5-list"></div>
     </div>
-    <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Your top 10 fastest times at each standard distance, each linking to the activity. Runs: 400m-Marathon come from Strava directly, 50K/100K are computed from raw distance data. Rides: 5 mile-100 mile are all computed from raw distance data, since Strava doesn't track standard-distance bests for bikes at all.</div>
-    <div id="distance-scan-status" style="font-size:12px;color:#7d8590;padding:2px 0 10px"></div>
-    <div id="distance-scan-controls" style="margin-bottom:12px"></div>
-    <div id="distance-records-list"></div>
   </div>
 
-  <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #21262d">
-    <div class="section-header"><h2>Goals</h2><p>Set targets and track your progress automatically from Strava data.</p></div>
+  <div class="card" id="collapse-personal-bests">
+    <div class="card-title collapse-head" onclick="toggleCollapse('personal-bests')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M4 19h16M4 15l4-4 4 3 6-8"/></svg>Personal Bests</div></div>
+    <div class="collapse-body">
+      <div id="distance-sport-toggle" style="display:flex;gap:4px;margin-bottom:10px">
+        <button class="nav-btn active" data-sport="run" onclick="setDistanceSport('run')">Runs</button>
+        <button class="nav-btn" data-sport="ride" onclick="setDistanceSport('ride')">Rides</button>
+      </div>
+      <div style="font-size:12px;color:#7d8590;margin-bottom:10px">Your top 10 fastest times at each standard distance, each linking to the activity. Runs: 400m-Marathon come from Strava directly, 50K/100K are computed from raw distance data. Rides: 5 mile-100 mile are all computed from raw distance data, since Strava doesn't track standard-distance bests for bikes at all.</div>
+      <div id="distance-scan-status" style="font-size:12px;color:#7d8590;padding:2px 0 10px"></div>
+      <div id="distance-scan-controls" style="margin-bottom:12px"></div>
+      <div id="distance-records-list"></div>
+    </div>
+  </div>
+
+  <div class="card" id="collapse-goals" style="margin-top:2rem">
+    <div class="card-title collapse-head" onclick="toggleCollapse('goals')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>Goals</div></div>
+    <div class="collapse-body">
+    <p style="font-size:12px;color:#7d8590;margin-bottom:1rem">Set targets and track your progress automatically from Strava data.</p>
     <div class="add-goal-form" id="add-goal-form">
       <div style="font-size:14px;font-weight:600;color:#e6edf3;margin-bottom:12px">+ Add a new goal</div>
       <div class="form-row">
@@ -574,10 +592,13 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <button class="gold-btn" onclick="addGoal()">Add goal</button>
     </div>
     <div id="goals-list"></div>
+    </div>
   </div>
 
-  <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #21262d">
-    <div class="section-header"><h2>Training zones</h2><p>Power zones for cycling and pace zones for running, calculated from your settings.</p></div>
+  <div class="card" id="collapse-zones" style="margin-top:2rem">
+    <div class="card-title collapse-head" onclick="toggleCollapse('zones')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Training zones</div></div>
+    <div class="collapse-body">
+    <p style="font-size:12px;color:#7d8590;margin-bottom:1rem">Power zones for cycling and pace zones for running, calculated from your settings.</p>
     <div class="g2">
       <div class="card" style="margin-bottom:0">
         <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Cycling power zones <span id="ftp-display" style="font-size:12px;font-weight:400;color:#7d8590;margin-left:6px"></span></div></div>
@@ -618,6 +639,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div class="card-title"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Recent activity zone breakdown</div></div>
       <div id="zone-breakdown"></div>
     </div>
+    </div>
   </div>
 </div>
 
@@ -636,6 +658,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       </div>
     </div>
     <div id="cal-grid"></div>
+    <div id="cal-day-detail" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #21262d"></div>
     <div class="chart-legend" style="margin-top:10px;flex-wrap:wrap;gap:8px">
       <div class="legend-item"><span class="legend-dot" style="background:#FC4C02"></span>Ride</div>
       <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Run</div>
@@ -1269,6 +1292,7 @@ function showSection(name) {
         renderAeroChart();
         renderGoals();
         renderZones();
+        applyCollapseState();
       } catch(e) { console.error('renderPerformance:', e); }
     }, 500);
   }
@@ -3532,6 +3556,41 @@ async function renderDistanceScanUI() {
 // {activity_id, activity_name, start_date|date, ...} entries plus a
 // formatter for the value column, so the same widget works for both
 // elapsed-time and watts data.
+// ==================== COLLAPSIBLE CARDS ====================
+// Long pages (Performance especially) stack many tall cards, so each one can
+// be collapsed to just its title. State is keyed by name in localStorage so
+// it survives reloads and section switches.
+function getCollapsed() {
+  try { return JSON.parse(localStorage.getItem('ed_collapsed') || '{}'); } catch(e) { return {}; }
+}
+
+function toggleCollapse(key) {
+  const el = document.getElementById('collapse-' + key);
+  if (!el) return;
+  const nowCollapsed = !el.classList.contains('collapsed');
+  el.classList.toggle('collapsed', nowCollapsed);
+  const state = getCollapsed();
+  state[key] = nowCollapsed;
+  try { localStorage.setItem('ed_collapsed', JSON.stringify(state)); } catch(e) {}
+  // Charts sized while their container was display:none come out 0-height,
+  // so let Chart.js re-measure once the body is visible again.
+  if (!nowCollapsed) {
+    setTimeout(function() {
+      Object.keys(charts).forEach(function(k) { if (charts[k]) try { charts[k].resize(); } catch(e) {} });
+    }, 30);
+  }
+}
+
+// Applies saved collapse state on load. Called after the sections that
+// contain collapsible cards have been rendered.
+function applyCollapseState() {
+  const state = getCollapsed();
+  Object.keys(state).forEach(function(key) {
+    const el = document.getElementById('collapse-' + key);
+    if (el) el.classList.toggle('collapsed', !!state[key]);
+  });
+}
+
 function twirlRow(rank, entry, formatValue, valueColor) {
   const dateStr = new Date(entry.start_date || entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">' +
@@ -3602,7 +3661,7 @@ async function renderDistanceRecords() {
 
 
 let currentAeroSport = 'ride';
-let currentAeroRange = 7;
+let currentAeroRange = 30;
 
 function renderAeroChart() {
   renderAeroFor(currentAeroRange);
@@ -3617,16 +3676,10 @@ function setAeroSport(sport) {
 }
 
 function renderAeroFor(range) {
-  currentAeroRange = range;
-  document.querySelectorAll('#aero-filters .nav-btn').forEach(function(b) {
-    b.classList.remove('active');
-    var txt = b.textContent.trim();
-    if ((range===7 && txt==='7d') || (range===30 && txt==='1mo') ||
-        (range===60 && txt==='2mo') || (range===90 && txt==='3mo') ||
-        (range===180 && txt==='6mo') || (range==='ytd' && txt==='YTD')) {
-      b.classList.add('active');
-    }
-  });
+  currentAeroRange = (range === 'ytd') ? 'ytd' : Number(range);
+  range = currentAeroRange;
+  const sel = document.getElementById('aero-range-select');
+  if (sel) sel.value = String(range);
 
   const sportTypes = POWER_SPORTS[currentAeroSport].types;
   const sportLabel = POWER_SPORTS[currentAeroSport].label.toLowerCase();
@@ -3761,6 +3814,9 @@ function activityTypeColor(type) {
 }
 // ==================== TRAINING CALENDAR ====================
 let calYear, calMonth;
+// Which calendar day is expanded in the detail panel below the grid, or
+// null for none. Read by renderCalendar to outline the selected tile.
+let expandedCalDay = null;
 
 function initCalendar() {
   const now = new Date();
@@ -3775,7 +3831,11 @@ function calNav(dir) {
     if (calMonth > 11) { calMonth=0; calYear++; }
     if (calMonth < 0) { calMonth=11; calYear--; }
   }
+  // The open day belongs to the month we just left - close it rather than
+  // leaving a detail panel for a day that's no longer on screen.
+  expandedCalDay = null;
   renderCalendar();
+  renderCalDayDetail();
 }
 
 function renderHeatmap() {
@@ -3827,7 +3887,10 @@ function renderCalendar() {
     const other = acts.filter(a=>a.type!=='Ride'&&a.type!=='VirtualRide'&&a.type!=='Run'&&a.type!=='TrailRun');
 
     let bg = isFuture ? '#0d1117' : '#161b22';
-    let borderColor = isToday ? '#C9A227' : '#21262d';
+    // The expanded day outranks today's highlight, so it's obvious which
+    // tile the detail panel below is describing.
+    const isExpanded = dateStr === expandedCalDay;
+    let borderColor = isExpanded ? '#58a6ff' : isToday ? '#C9A227' : '#21262d';
     let dots = '';
 
     if (acts.length) {
@@ -3854,7 +3917,7 @@ function renderCalendar() {
     const tss = acts.length ? Math.round(acts.reduce((s,a)=>s+estimateTSS(a),0)) : '';
     const title = acts.length ? acts.map(a=>`${a.name} (${(a.distance/1609.34).toFixed(1)}mi)`).join(', ') + (tss?` — ${tss} TSS`:'') : '';
 
-    html += `<div title="${escapeHTML(title)}" style="background:${bg};border:1px solid ${borderColor};border-radius:6px;padding:4px;min-height:52px;cursor:${acts.length?'pointer':'default'}" ${acts.length?`onclick="showCalDay('${dateStr}')"`:''}>
+    html += `<div title="${escapeHTML(title)}" style="background:${bg};border:1px solid ${borderColor};${isExpanded?'box-shadow:0 0 0 1px #58a6ff;':''}border-radius:6px;padding:4px;min-height:52px;cursor:${acts.length?'pointer':'default'}" ${acts.length?`onclick="showCalDay('${dateStr}')"`:''}>
       <div style="font-size:11px;font-weight:${isToday?700:400};color:${isToday?'#C9A227':'#7d8590'};text-align:right">${day}</div>
       ${totalMi?`<div style="font-size:10px;color:#e6edf3;text-align:center;margin-top:1px">${totalMi}mi</div>`:''}
       ${dots}
@@ -3878,19 +3941,100 @@ function renderCalendar() {
 }
 
 function showCalDay(dateStr) {
-  const acts = allActivities.filter(a=>a.start_date.startsWith(dateStr));
-  if (!acts.length) return;
-  const d = new Date(dateStr);
-  const dateLabel = d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  alert(dateLabel + '\n\n' + acts.map(function(a){
-    var mi = (a.distance/1609.34).toFixed(1);
-    var h=Math.floor(a.moving_time/3600), m=Math.floor((a.moving_time%3600)/60);
-    var t = h>0?(h+'h '+m+'m'):(m+'m');
-    var typeLabel = activityTypeLabel(a.type);
-    var power = a.average_watts ? ' @ '+Math.round(a.average_watts)+'w' : '';
-    var hr = a.average_heartrate ? ' | '+Math.round(a.average_heartrate)+'bpm' : '';
-    return '• ['+typeLabel+'] '+a.name+': '+mi+'mi in '+t+power+hr;
-  }).join('\n'));
+  // Clicking the already-open day closes the panel, so a day tile toggles.
+  const closing = expandedCalDay === dateStr;
+  expandedCalDay = closing ? null : dateStr;
+  renderCalendar(); // repaint tiles so the selected-day outline follows the panel
+  renderCalDayDetail();
+  if (!closing) {
+    const panel = document.getElementById('cal-day-detail');
+    if (panel) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function renderCalDayDetail() {
+  const panel = document.getElementById('cal-day-detail');
+  if (!panel) return;
+  if (!expandedCalDay) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+
+  // Match on the local calendar day, exactly like renderCalendar's dayMap.
+  // This used to filter on start_date.startsWith(), which is the raw UTC
+  // date - so an evening activity (already past midnight UTC) opened under
+  // the wrong day, disagreeing with the very tile that was clicked.
+  const acts = allActivities.filter(function(a) { return activityLocalDateKey(a) === expandedCalDay; });
+  if (!acts.length) { panel.style.display = 'none'; return; }
+
+  const [y, m, d] = expandedCalDay.split('-').map(Number);
+  const dateLabel = new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  const totalMi = (acts.reduce(function(s, a) { return s + a.distance; }, 0) / 1609.34).toFixed(1);
+  const totalTSS = Math.round(acts.reduce(function(s, a) { return s + estimateTSS(a); }, 0));
+  const totalElev = Math.round(acts.reduce(function(s, a) { return s + (a.total_elevation_gain || 0); }, 0) * 3.281);
+
+  panel.style.display = 'block';
+  panel.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+      '<div style="font-size:13px;font-weight:600;color:#e6edf3">' + dateLabel + '</div>' +
+      '<button onclick="showCalDay(\'' + expandedCalDay + '\')" style="background:transparent;border:1px solid #30363d;border-radius:6px;padding:3px 9px;color:#7d8590;cursor:pointer;font-size:11px">Close</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:14px;margin-bottom:10px;font-size:11px;color:#7d8590;flex-wrap:wrap">' +
+      '<span><strong style="color:#e6edf3">' + acts.length + '</strong> activit' + (acts.length !== 1 ? 'ies' : 'y') + '</span>' +
+      '<span><strong style="color:#e6edf3">' + totalMi + '</strong> mi</span>' +
+      '<span><strong style="color:#e6edf3">' + totalElev.toLocaleString() + '</strong> ft</span>' +
+      '<span><strong style="color:#e6edf3">' + totalTSS + '</strong> TSS</span>' +
+    '</div>' +
+    acts.map(function(a) {
+      const mi = (a.distance / 1609.34).toFixed(2);
+      const h = Math.floor(a.moving_time / 3600), mm = Math.floor((a.moving_time % 3600) / 60);
+      const t = h > 0 ? (h + 'h ' + mm + 'm') : (mm + 'm');
+      const col = activityTypeColor(a.type);
+      const sport = sportGroupForType(a.type);
+      const time = (a.start_date_local || a.start_date).split('T')[1];
+      const timeLabel = time ? (function() {
+        const hr = parseInt(time.split(':')[0], 10);
+        const min = time.split(':')[1];
+        return (hr % 12 || 12) + ':' + min + (hr >= 12 ? 'pm' : 'am');
+      })() : '';
+
+      // Pace for runs, speed for everything else - the units people
+      // actually think in for each sport.
+      let paceOrSpeed = '';
+      if (a.moving_time > 0 && a.distance > 0) {
+        if (sport === 'run') {
+          const secsPerMi = a.moving_time / (a.distance / 1609.34);
+          paceOrSpeed = secsToMmSs(Math.round(secsPerMi)) + ' /mi';
+        } else {
+          paceOrSpeed = ((a.distance / 1609.34) / (a.moving_time / 3600)).toFixed(1) + ' mph';
+        }
+      }
+
+      const stats = [
+        { label: 'Distance', value: mi + ' mi' },
+        { label: 'Time', value: t },
+        paceOrSpeed ? { label: sport === 'run' ? 'Pace' : 'Speed', value: paceOrSpeed } : null,
+        a.total_elevation_gain ? { label: 'Elevation', value: Math.round(a.total_elevation_gain * 3.281).toLocaleString() + ' ft' } : null,
+        a.average_watts ? { label: 'Avg power', value: Math.round(a.average_watts) + ' w' } : null,
+        a.average_heartrate ? { label: 'Avg HR', value: Math.round(a.average_heartrate) + ' bpm' } : null,
+        a.average_cadence ? { label: 'Cadence', value: Math.round(a.average_cadence) + (sport === 'run' ? ' spm' : ' rpm') } : null,
+        estimateTSS(a) ? { label: 'TSS', value: Math.round(estimateTSS(a)) } : null
+      ].filter(Boolean);
+
+      return '<div style="border:1px solid #21262d;border-left:3px solid ' + col + ';border-radius:6px;padding:10px;margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">' +
+          '<div>' +
+            '<a href="' + stravaActivityHref(a.id) + '" target="_blank" rel="noopener noreferrer" style="font-size:13px;font-weight:500;color:#e6edf3;text-decoration:none">' + escapeHTML(a.name || 'Untitled') + '</a>' +
+            '<div style="font-size:11px;color:#7d8590;margin-top:2px">' + escapeHTML(activityTypeLabel(a.type)) + (timeLabel ? ' &middot; ' + timeLabel : '') + '</div>' +
+          '</div>' +
+          (a.achievement_count > 0 ? '<span class="badge b-gold" style="flex-shrink:0">+' + a.achievement_count + '</span>' : '') +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:8px">' +
+          stats.map(function(s) {
+            return '<div><div style="font-size:10px;color:#7d8590;text-transform:uppercase;letter-spacing:0.4px">' + s.label + '</div>' +
+              '<div style="font-size:13px;color:#e6edf3;font-weight:500">' + s.value + '</div></div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    }).join('');
 }
 
 
@@ -4119,14 +4263,21 @@ const VO2_NORMS_BY_AGE_MALE = [
 // your VO2 max falls on the age curve via linear interpolation between known
 // points - e.g. a VO2 max between two age brackets' reference values gets a
 // fitness age interpolated between those ages.
+// Lowest age this model will report. The norms table's youngest reference
+// point is 22, so anything under that is already extrapolation past the
+// data; below this floor the number stops carrying information and just
+// means "off the top of the chart" - so callers surface it as a capped
+// "20 or better" rather than pretending to resolve an exact age.
+const FITNESS_AGE_FLOOR = 20;
+
 function calcFitnessAge(vo2max) {
   const norms = VO2_NORMS_BY_AGE_MALE;
   if (vo2max >= norms[0].good) {
     // Fitter than even the youngest competitive-athlete reference point
-    // (58 at age 22) - this is genuinely elite territory, so extrapolate
-    // gently downward with a floor at 18 rather than claiming something
-    // implausible.
-    return Math.max(18, Math.round(norms[0].age - (vo2max - norms[0].good) * 0.8));
+    // (58 at age 22) - genuinely elite territory. Extrapolate gently
+    // downward, but clamp at the floor: the table has no data up here, so
+    // a precise-looking 18 would be false precision.
+    return Math.max(FITNESS_AGE_FLOOR, Math.round(norms[0].age - (vo2max - norms[0].good) * 0.8));
   }
   if (vo2max <= norms[norms.length-1].good) {
     // Below the oldest bracket's reference - extrapolate upward.
@@ -4219,8 +4370,13 @@ function calcTrueAge() {
     parts.push({ label: 'HRV (SDNN)', value: Math.round(healthKitData.hrvSDNN) + ' ms', source: 'Apple Health (30-day avg)', effect: hrvAdj });
   }
 
-  const trueAge = Math.max(18, Math.min(90, Math.round(baseFitnessAge + rhrAdj + hrvAdj)));
-  return { trueAge, baseFitnessAge, chronologicalAge: age.value, ageSource: age.source, parts };
+  const raw = Math.round(baseFitnessAge + rhrAdj + hrvAdj);
+  const trueAge = Math.max(FITNESS_AGE_FLOOR, Math.min(90, raw));
+  // Saturated = the inputs pushed past what the norms table can represent,
+  // so the number is a floor, not a measurement. The card says so instead
+  // of quietly showing a clamped value as if it were precise.
+  const saturated = raw < FITNESS_AGE_FLOOR;
+  return { trueAge, saturated, baseFitnessAge, chronologicalAge: age.value, ageSource: age.source, parts };
 }
 
 function renderTrueAge() {
@@ -4240,16 +4396,17 @@ function renderTrueAge() {
 
   const diff = result.chronologicalAge - result.trueAge;
   const diffColor = diff > 0 ? '#3fb950' : diff < 0 ? '#f85149' : '#7d8590';
-  const diffText = diff > 0 ? diff + ' years younger than your actual age'
+  const diffText = (result.saturated ? 'at least ' : '') + (
+    diff > 0 ? diff + ' years younger than your actual age'
     : diff < 0 ? (-diff) + ' years older than your actual age'
-    : 'matches your actual age';
+    : 'matches your actual age');
 
   if (srcEl) srcEl.textContent = healthKitData && healthKitData.source === 'healthkit' ? 'Powered by Apple Health' : 'From Settings + estimates';
 
   body.innerHTML =
     '<div style="display:flex;align-items:flex-end;gap:2rem;flex-wrap:wrap">' +
       '<div>' +
-        '<div style="font-size:52px;font-weight:700;color:' + diffColor + ';line-height:1">' + result.trueAge + '</div>' +
+        '<div style="font-size:52px;font-weight:700;color:' + diffColor + ';line-height:1">' + (result.saturated ? '&le;' : '') + result.trueAge + '</div>' +
         '<div style="font-size:12px;color:#7d8590;margin-top:4px">True Age</div>' +
       '</div>' +
       '<div style="padding-bottom:6px">' +
@@ -4269,7 +4426,9 @@ function renderTrueAge() {
         '</div>';
       }).join('') +
     '</div>' +
-    '<div style="margin-top:0.75rem;font-size:11px;color:#57606a">Based on published VO2 max age-norms with resting HR and HRV modifiers. General guidance, not a clinical measure.</div>';
+    '<div style="margin-top:0.75rem;font-size:11px;color:#57606a">Based on published VO2 max age-norms with resting HR and HRV modifiers. General guidance, not a clinical measure.' +
+      (result.saturated ? ' Your numbers are past the top of the reference range, so this is capped at ' + FITNESS_AGE_FLOOR + ' — treat it as “' + FITNESS_AGE_FLOOR + ' or better” rather than an exact age.' : '') +
+    '</div>';
 }
 
 function renderVO2Max() {
@@ -4286,13 +4445,18 @@ function renderVO2Max() {
     hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">--</div><div class="metric-sub">No max HR data found in recent runs</div></div>';
   }
 
-  // Measured value gets its own card and takes priority for the fitness age
-  // calculation, since it's a direct reading rather than a formula-derived
-  // estimate. Apple Health (device-measured, pushed in by the iOS app)
-  // outranks a manually-entered Settings value.
+  // Measured value gets its own card, since it's a direct reading rather
+  // than a formula-derived estimate. Apple Health (device-measured, pushed
+  // in by the iOS app) outranks a manually-entered Settings value.
+  //
+  // This card used to also show its own "Estimated fitness age", which was
+  // the same calcFitnessAge() number the dashboard's True Age card is built
+  // on - two different figures for one concept, confusingly close together
+  // and never quite matching (True Age adds resting-HR and HRV modifiers on
+  // top of the same base). The age lives on the dashboard now; this card
+  // sticks to reporting VO2 max itself and links there.
   const hkVO2 = healthKitData && healthKitData.vo2max ? healthKitData.vo2max : null;
   const measuredVO2 = hkVO2 || s.measuredVO2Max;
-  const effAge = (healthKitData && healthKitData.age) || s.age;
   let measuredRow = '';
   let fitnessAgeRow = '';
   if (measuredVO2) {
@@ -4304,16 +4468,8 @@ function renderVO2Max() {
       }
     }
     measuredRow = '<div class="metric" style="margin-top:0;grid-column:1/-1;border:1px solid #C9A227"><div class="metric-label">Measured VO2 max</div><div class="metric-val" style="color:#C9A227">'+measuredVO2+'</div><div class="metric-sub">'+measuredSub+'</div></div>';
-
-    if (effAge) {
-      const fitnessAge = calcFitnessAge(measuredVO2);
-      const diff = effAge - fitnessAge;
-      const diffText = diff > 0 ? (diff+' years younger than your actual age') : diff < 0 ? ((-diff)+' years older than your actual age') : 'matches your actual age';
-      fitnessAgeRow = '<div class="metric" style="margin-top:0;grid-column:1/-1"><div class="metric-label">Estimated fitness age</div><div class="metric-val" style="color:#3fb950">'+fitnessAge+'</div><div class="metric-sub">Based on published age-norms for VO2 max - '+diffText+'. For general guidance only, not a clinical measure.</div></div>';
-    } else {
-      fitnessAgeRow = '<div class="metric" style="margin-top:0;grid-column:1/-1"><div class="metric-label">Estimated fitness age</div><div class="metric-val">--</div><div class="metric-sub">Enter your age in Settings to see this</div></div>';
-    }
   }
+  fitnessAgeRow = '<div style="grid-column:1/-1;font-size:12px;color:#7d8590">Your fitness age from these numbers is on the <a href="#" onclick="showSection(\'dashboard\');return false" style="color:#C9A227">dashboard</a>, as True Age.</div>';
 
   el.innerHTML = '<div class="g2">'+
     measuredRow+
