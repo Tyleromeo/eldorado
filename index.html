@@ -360,6 +360,14 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div class="metric"><div class="metric-label">This week</div><div class="metric-val" id="week-mi">--</div><div class="metric-sub" id="week-acts"></div></div>
   </div>
 
+  <div class="card" id="true-age-card">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>True Age</div>
+      <span id="true-age-source" style="font-size:11px;color:#7d8590"></span>
+    </div>
+    <div id="true-age-body"><p style="font-size:13px;color:#7d8590">Loading...</p></div>
+  </div>
+
   <div class="card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Fitness trend</div>
@@ -2244,6 +2252,7 @@ function renderDashboard() {
   checkNotifications(allActivities, metrics);
   loadClubEvents();
   renderStreaks();
+  renderTrueAge();
 }
 
 function activityRow(r) {
@@ -4014,7 +4023,9 @@ function calcVO2Max() {
 
   let hrEstimate = null;
   if (observedMaxHR > 0) {
-    const restingHR = s.restingHR || 58;
+    // Prefer the Apple Health 30-day resting HR average when the iOS app
+    // has provided one - it's measured, not manually entered.
+    const restingHR = (healthKitData && healthKitData.restingHR) || s.restingHR || 58;
     hrEstimate = Math.round(15.3 * (observedMaxHR / restingHR));
   }
 
@@ -4132,12 +4143,141 @@ function calcFitnessAge(vo2max) {
   return null;
 }
 
+// ==================== TRUE AGE (HealthKit-powered) ====================
+// Inside the iOS app, HealthKitManager.swift reads VO2 max / resting HR /
+// HRV / date of birth from Apple Health and calls window.receiveHealthData
+// with them (re-sent after every page load). In a normal browser this stays
+// null and everything falls back to Settings values and formula estimates.
+let healthKitData = null;
+try { healthKitData = JSON.parse(localStorage.getItem('ed_healthkit') || 'null'); } catch(e) {}
+
+window.receiveHealthData = function(data) {
+  if (!data || typeof data !== 'object') return;
+  healthKitData = data;
+  try { localStorage.setItem('ed_healthkit', JSON.stringify(data)); } catch(e) {}
+  renderTrueAge();
+  renderVO2Max();
+};
+
+// Best available VO2 max, in priority order: Apple Health measurement
+// (device-measured), manually entered reading (Settings), then the
+// formula-based estimates (Daniels VDOT from threshold pace, HR-ratio).
+function getEffectiveVO2Max() {
+  const s = getSettings();
+  if (healthKitData && healthKitData.vo2max) return { value: healthKitData.vo2max, source: 'Apple Health' };
+  if (s.measuredVO2Max) return { value: s.measuredVO2Max, source: 'Settings (manual)' };
+  const v = calcVO2Max();
+  if (v && v.vdot) return { value: v.vdot, source: 'Estimated from threshold pace' };
+  if (v && v.hrBased) return { value: v.hrBased, source: 'Estimated from heart rate' };
+  return null;
+}
+
+function getEffectiveAge() {
+  if (healthKitData && healthKitData.age) return { value: healthKitData.age, source: 'Apple Health' };
+  const s = getSettings();
+  if (s.age) return { value: s.age, source: 'Settings' };
+  return null;
+}
+
+function getEffectiveRestingHR() {
+  if (healthKitData && healthKitData.restingHR) return { value: healthKitData.restingHR, source: 'Apple Health (30-day avg)' };
+  const s = getSettings();
+  if (s.restingHR) return { value: s.restingHR, source: 'Settings' };
+  return null;
+}
+
+// Composite "True Age": VO2 max is the dominant, best-validated input (it
+// maps to a fitness age via the trained-athlete norms above); resting HR and
+// HRV act as small modifiers. All coefficients are rough population-level
+// approximations, documented for transparency, and the result is guidance -
+// not a clinical measure.
+function calcTrueAge() {
+  const vo2 = getEffectiveVO2Max();
+  const age = getEffectiveAge();
+  if (!vo2 || !age) return null;
+
+  const baseFitnessAge = calcFitnessAge(vo2.value);
+  if (baseFitnessAge == null) return null;
+
+  const parts = [{ label: 'VO2 max', value: vo2.value + ' ml/kg/min', source: vo2.source, effect: null }];
+
+  // Resting HR: ~66 bpm is a typical adult average; each bpm above/below
+  // nudges the age slightly (athletic RHRs in the 40s-50s read younger).
+  let rhrAdj = 0;
+  const rhr = getEffectiveRestingHR();
+  if (rhr) {
+    rhrAdj = Math.max(-4, Math.min(4, (rhr.value - 66) * 0.15));
+    parts.push({ label: 'Resting HR', value: Math.round(rhr.value) + ' bpm', source: rhr.source, effect: rhrAdj });
+  }
+
+  // HRV (SDNN): only available via Apple Health. Reference declines with
+  // age (~75ms young adult, ~0.7ms/year); above-reference reads younger.
+  let hrvAdj = 0;
+  if (healthKitData && healthKitData.hrvSDNN) {
+    const hrvRef = Math.max(20, 75 - 0.7 * age.value);
+    hrvAdj = Math.max(-3, Math.min(3, (hrvRef - healthKitData.hrvSDNN) * 0.08));
+    parts.push({ label: 'HRV (SDNN)', value: Math.round(healthKitData.hrvSDNN) + ' ms', source: 'Apple Health (30-day avg)', effect: hrvAdj });
+  }
+
+  const trueAge = Math.max(18, Math.min(90, Math.round(baseFitnessAge + rhrAdj + hrvAdj)));
+  return { trueAge, baseFitnessAge, chronologicalAge: age.value, ageSource: age.source, parts };
+}
+
+function renderTrueAge() {
+  const body = document.getElementById('true-age-body');
+  if (!body) return;
+  const srcEl = document.getElementById('true-age-source');
+
+  const result = calcTrueAge();
+  if (!result) {
+    const missing = !getEffectiveVO2Max()
+      ? 'Set a threshold run pace or enter a measured VO2 max in Settings'
+      : 'Enter your age in Settings';
+    body.innerHTML = '<p style="font-size:13px;color:#7d8590">' + missing + ' - or open this in the iOS app and grant Health access for device-measured data.</p>';
+    if (srcEl) srcEl.textContent = '';
+    return;
+  }
+
+  const diff = result.chronologicalAge - result.trueAge;
+  const diffColor = diff > 0 ? '#3fb950' : diff < 0 ? '#f85149' : '#7d8590';
+  const diffText = diff > 0 ? diff + ' years younger than your actual age'
+    : diff < 0 ? (-diff) + ' years older than your actual age'
+    : 'matches your actual age';
+
+  if (srcEl) srcEl.textContent = healthKitData && healthKitData.source === 'healthkit' ? 'Powered by Apple Health' : 'From Settings + estimates';
+
+  body.innerHTML =
+    '<div style="display:flex;align-items:flex-end;gap:2rem;flex-wrap:wrap">' +
+      '<div>' +
+        '<div style="font-size:52px;font-weight:700;color:' + diffColor + ';line-height:1">' + result.trueAge + '</div>' +
+        '<div style="font-size:12px;color:#7d8590;margin-top:4px">True Age</div>' +
+      '</div>' +
+      '<div style="padding-bottom:6px">' +
+        '<div style="font-size:24px;font-weight:600;color:#e6edf3;line-height:1">' + result.chronologicalAge + '</div>' +
+        '<div style="font-size:11px;color:#7d8590;margin-top:4px">actual age (' + result.ageSource + ')</div>' +
+      '</div>' +
+      '<div style="padding-bottom:8px;font-size:13px;color:' + diffColor + ';font-weight:500">' + diffText + '</div>' +
+    '</div>' +
+    '<div style="margin-top:1rem;border-top:1px solid #21262d;padding-top:0.75rem">' +
+      result.parts.map(function(p) {
+        const effectTxt = p.effect == null ? 'baseline'
+          : (p.effect <= -0.5 ? Math.abs(Math.round(p.effect*10)/10) + 'y younger' : p.effect >= 0.5 ? Math.round(p.effect*10)/10 + 'y older' : 'neutral');
+        const effectColor = p.effect == null ? '#7d8590' : p.effect <= -0.5 ? '#3fb950' : p.effect >= 0.5 ? '#f85149' : '#7d8590';
+        return '<div class="row">' +
+          '<div><div class="row-name">' + p.label + '</div><div class="row-meta">' + p.source + '</div></div>' +
+          '<div class="row-right">' + p.value + '<small style="color:' + effectColor + '">' + effectTxt + '</small></div>' +
+        '</div>';
+      }).join('') +
+    '</div>' +
+    '<div style="margin-top:0.75rem;font-size:11px;color:#57606a">Based on published VO2 max age-norms with resting HR and HRV modifiers. General guidance, not a clinical measure.</div>';
+}
+
 function renderVO2Max() {
   const el = document.getElementById('vo2max-display');
   if (!el) return;
   const s = getSettings();
   const v = calcVO2Max();
-  if (!v && !s.measuredVO2Max) { el.innerHTML = '<p style="font-size:13px;color:#7d8590">Set a threshold run pace in Settings to see an estimate.</p>'; return; }
+  if (!v && !s.measuredVO2Max && !(healthKitData && healthKitData.vo2max)) { el.innerHTML = '<p style="font-size:13px;color:#7d8590">Set a threshold run pace in Settings to see an estimate.</p>'; renderTrueAge(); return; }
 
   let hrRow = '';
   if (v && v.hrBased) {
@@ -4146,17 +4286,28 @@ function renderVO2Max() {
     hrRow = '<div class="metric" style="margin-top:0"><div class="metric-label">HR-based estimate</div><div class="metric-val">--</div><div class="metric-sub">No max HR data found in recent runs</div></div>';
   }
 
-  // Measured value (manually entered from a watch/app/lab test) gets its
-  // own card and takes priority for the fitness age calculation, since it's
-  // a direct reading rather than a formula-derived estimate.
+  // Measured value gets its own card and takes priority for the fitness age
+  // calculation, since it's a direct reading rather than a formula-derived
+  // estimate. Apple Health (device-measured, pushed in by the iOS app)
+  // outranks a manually-entered Settings value.
+  const hkVO2 = healthKitData && healthKitData.vo2max ? healthKitData.vo2max : null;
+  const measuredVO2 = hkVO2 || s.measuredVO2Max;
+  const effAge = (healthKitData && healthKitData.age) || s.age;
   let measuredRow = '';
   let fitnessAgeRow = '';
-  if (s.measuredVO2Max) {
-    measuredRow = '<div class="metric" style="margin-top:0;grid-column:1/-1;border:1px solid #C9A227"><div class="metric-label">Measured VO2 max</div><div class="metric-val" style="color:#C9A227">'+s.measuredVO2Max+'</div><div class="metric-sub">Your latest manually-entered reading</div></div>';
+  if (measuredVO2) {
+    let measuredSub = 'Your latest manually-entered reading';
+    if (hkVO2) {
+      measuredSub = 'Measured via Apple Health';
+      if (healthKitData.vo2maxDate) {
+        try { measuredSub += ' &middot; ' + new Date(healthKitData.vo2maxDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); } catch(e) {}
+      }
+    }
+    measuredRow = '<div class="metric" style="margin-top:0;grid-column:1/-1;border:1px solid #C9A227"><div class="metric-label">Measured VO2 max</div><div class="metric-val" style="color:#C9A227">'+measuredVO2+'</div><div class="metric-sub">'+measuredSub+'</div></div>';
 
-    if (s.age) {
-      const fitnessAge = calcFitnessAge(s.measuredVO2Max);
-      const diff = s.age - fitnessAge;
+    if (effAge) {
+      const fitnessAge = calcFitnessAge(measuredVO2);
+      const diff = effAge - fitnessAge;
       const diffText = diff > 0 ? (diff+' years younger than your actual age') : diff < 0 ? ((-diff)+' years older than your actual age') : 'matches your actual age';
       fitnessAgeRow = '<div class="metric" style="margin-top:0;grid-column:1/-1"><div class="metric-label">Estimated fitness age</div><div class="metric-val" style="color:#3fb950">'+fitnessAge+'</div><div class="metric-sub">Based on published age-norms for VO2 max - '+diffText+'. For general guidance only, not a clinical measure.</div></div>';
     } else {
@@ -4172,6 +4323,9 @@ function renderVO2Max() {
     '</div>';
 
   renderVO2Trend(90);
+  // Settings that feed this card (age, measured VO2 max, resting HR) also
+  // feed True Age - keep the dashboard card in sync on any of those edits.
+  renderTrueAge();
 }
 
 function vdotFromPaceSecs(secsPerMile) {
