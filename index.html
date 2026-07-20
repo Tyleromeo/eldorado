@@ -447,6 +447,33 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
+  <div class="card" id="collapse-road-reports">
+    <div class="card-title collapse-head" onclick="toggleCollapse('road-reports')">
+      <div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Road work reports</div>
+    </div>
+    <div class="collapse-body">
+      <p style="font-size:12px;color:#7d8590;margin-bottom:12px">Community-reported repaving around Long Island — know which roads to avoid while they're stripped, and where the fresh tarmac is. Reports are shared with everyone using ElDorado.</p>
+      <div id="road-reports-list" style="margin-bottom:14px;font-size:13px;color:#7d8590">Loading reports...</div>
+      <div style="border-top:1px solid #21262d;padding-top:12px">
+        <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:8px">Report road work</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <input type="text" id="road-report-name" placeholder="Road name (e.g. Kohr Road)" style="flex:2;min-width:150px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font-size:13px;color:#e6edf3" />
+          <input type="text" id="road-report-town" placeholder="Town (e.g. Kings Park)" style="flex:1;min-width:120px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font-size:13px;color:#e6edf3" />
+          <select id="road-report-status" style="flex:1;min-width:150px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font-size:13px;color:#e6edf3">
+            <option value="milled">Stripped / milled — avoid</option>
+            <option value="repaving">Repaving soon</option>
+            <option value="fresh">Fresh tarmac — ride it</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="road-report-note" placeholder="Optional note (e.g. northbound lane only)" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;font-size:13px;color:#e6edf3" />
+          <button class="gold-btn" onclick="submitRoadReport()" id="road-report-submit">Report</button>
+        </div>
+        <div id="road-report-msg" style="font-size:12px;color:#7d8590;margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
+
   <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #21262d">
     <div class="section-header"><h2>Weather forecast</h2><p>7-day outlook for Smithtown, NY with wind analysis for ride planning.</p></div>
     <div id="wx-loading" style="font-size:13px;color:#7d8590;padding:1rem 0">Loading forecast...</div>
@@ -914,7 +941,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div class="map-legend-item"><span class="map-swatch" style="background:#000000"></span>Ride heatmap (darker = more rides)</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#dc2626"></span>Run heatmap (darker = more runs)</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#e0691a"></span>Planned route</div>
-      <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Fresh pavement</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
   </div>
@@ -1341,6 +1367,7 @@ function showSection(name) {
   // for 5 bottom tabs, not 11), so their render calls fire alongside whatever
   // section they now physically live in instead of their own `name === ...`.
   if (name === 'dashboard' && !weatherLoaded) { weatherLoaded = true; loadWeather(); }
+  if (name === 'dashboard' && !roadReportsLoaded) { roadReportsLoaded = true; loadRoadReports(); applyCollapseState(); }
   if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); } catch(e) { console.error('renderMap:', e); } }, 80); }
   if (name === 'settings') { try { loadSettingsUI(); } catch(e) { console.error('loadSettingsUI:', e); } }
   if (name === 'activities' && allActivities.length) { try { renderActivities(); renderHeatmap(); renderCollaborators(collabFilter||'all'); applyCollapseState(); } catch(e) { console.error('renderActivities:', e); } }
@@ -1361,6 +1388,80 @@ function showSection(name) {
   }
 }
 let weatherLoaded = false;
+let roadReportsLoaded = false;
+
+// ==================== ROAD WORK REPORTS ====================
+// Community-shared repaving reports, stored in Supabase via the Edge
+// Function (list_road_reports / add_road_report) - every ElDorado user
+// sees and contributes to the same feed. Built because no public feed
+// covers town-level repaving on Long Island; the highway departments
+// post to PDFs and Facebook, not anything an app can reliably pull.
+const ROAD_STATUS_META = {
+  milled:   { label: 'AVOID — STRIPPED', color: '#f85149', icon: '🚧' },
+  repaving: { label: 'REPAVING SOON',    color: '#d29922', icon: '🛠️' },
+  fresh:    { label: 'FRESH TARMAC',     color: '#3fb950', icon: '✅' }
+};
+
+async function loadRoadReports() {
+  const el = document.getElementById('road-reports-list');
+  if (!el) return;
+  try {
+    const data = await callEdge('list_road_reports', {});
+    renderRoadReports(data.reports || []);
+  } catch(e) {
+    el.innerHTML = '<span style="color:#7d8590">Could not load road reports.</span>';
+  }
+}
+
+function renderRoadReports(reports) {
+  const el = document.getElementById('road-reports-list');
+  if (!el) return;
+  if (!reports.length) {
+    el.innerHTML = '<span style="color:#7d8590">No road work reported yet — be the first below.</span>';
+    return;
+  }
+  el.innerHTML = reports.map(function(r) {
+    const meta = ROAD_STATUS_META[r.status] || ROAD_STATUS_META.repaving;
+    const when = r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
+    return '<div class="row">' +
+      '<div>' +
+        '<div class="row-name">' + meta.icon + ' ' + escapeHTML(r.road_name) + (r.town ? '<span style="color:#7d8590;font-weight:400"> · ' + escapeHTML(r.town) + '</span>' : '') + '</div>' +
+        '<div class="row-meta">' + [when, r.reported_by ? 'by ' + escapeHTML(r.reported_by) : '', r.note ? escapeHTML(r.note) : ''].filter(Boolean).join(' · ') + '</div>' +
+      '</div>' +
+      '<div class="row-right"><span style="font-size:10px;font-weight:600;color:' + meta.color + ';border:1px solid ' + meta.color + ';border-radius:4px;padding:2px 7px;white-space:nowrap">' + meta.label + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+async function submitRoadReport() {
+  const nameEl = document.getElementById('road-report-name');
+  const townEl = document.getElementById('road-report-town');
+  const statusEl = document.getElementById('road-report-status');
+  const noteEl = document.getElementById('road-report-note');
+  const msgEl = document.getElementById('road-report-msg');
+  const btn = document.getElementById('road-report-submit');
+  const roadName = (nameEl.value || '').trim();
+  if (!roadName) { msgEl.textContent = 'Enter a road name first.'; return; }
+
+  btn.disabled = true; msgEl.textContent = 'Posting...';
+  try {
+    await callEdge('add_road_report', {
+      road_name: roadName,
+      town: (townEl.value || '').trim() || null,
+      status: statusEl.value,
+      note: (noteEl.value || '').trim() || null,
+      reported_by: athleteData ? (athleteData.firstname + ' ' + athleteData.lastname) : null,
+      athlete_id: athleteData ? athleteData.id : null
+    });
+    nameEl.value = ''; townEl.value = ''; noteEl.value = '';
+    msgEl.textContent = 'Posted — thanks for the heads-up!';
+    setTimeout(function(){ msgEl.textContent = ''; }, 4000);
+    loadRoadReports();
+  } catch(e) {
+    msgEl.textContent = 'Could not post: ' + (e && e.message ? e.message : 'unknown error');
+  }
+  btn.disabled = false;
+}
 
 // AUTH
 function connectStrava() {
@@ -6545,11 +6646,6 @@ function isMapDistanceVisible(distanceMi) {
 }
 
 
-// =========== SURFACE LAYER =============================================
-// User-curated road/trail condition notes. This is deliberately local/user
-// controlled because no public map source reliably knows "fresh tarmac" right
-// after a town repaves a road. Use this for Fresh pavement, Good road, Rough
-// road, Avoid, Gravel/trail, or Unknown notes.
 // =========== ROUTE BUILDER ============================================
 // Turns the Map page into an interactive route planner. User clicks drop
 // waypoints; between each pair we call OSRM (the public demo server, free
