@@ -3031,26 +3031,33 @@ function renderMilesByYear() {
   const years = Object.keys(yearMap).sort();
   if (years.length < 2) return; // not enough data
 
-  const existing = document.getElementById('miles-by-year-card');
+  const existing = document.getElementById('collapse-miles-year');
   if (existing) existing.remove();
 
   const card = document.createElement('div');
-  card.id = 'miles-by-year-card';
+  card.id = 'collapse-miles-year';
   card.className = 'card';
   card.innerHTML = `
-    <div class="card-title"><div class="card-title-left">
+    <div class="card-title collapse-head" onclick="toggleCollapse('miles-year')"><div class="card-title-left">
+      <span class="collapse-caret">▼</span>
       <svg class="card-icon" viewBox="0 0 24 24"><rect x="2" y="3" width="4" height="18"/><rect x="10" y="8" width="4" height="13"/><rect x="18" y="5" width="4" height="16"/></svg>
       Miles by year
     </div></div>
-    <div class="chart-wrap chart-wrap-md"><canvas id="miles-year-chart"></canvas></div>
-    <div class="chart-legend" style="margin-top:8px">
-      <div class="legend-item"><span class="legend-dot" style="background:#FC4C02"></span>Ride</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Run</div>
+    <div class="collapse-body">
+      <div class="chart-wrap chart-wrap-md"><canvas id="miles-year-chart"></canvas></div>
+      <div class="chart-legend" style="margin-top:8px">
+        <div class="legend-item"><span class="legend-dot" style="background:#FC4C02"></span>Ride</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Run</div>
+      </div>
     </div>`;
 
   const perfSection = document.getElementById('section-performance');
   if (!perfSection) return;
   perfSection.appendChild(card);
+  // This card is rebuilt from scratch on every render (unlike the static
+  // collapsibles), so re-apply its saved collapse state each time - without
+  // this it would pop back open on every Performance visit.
+  if (getCollapsed()['miles-year']) card.classList.add('collapsed');
 
   setTimeout(() => {
     if (charts['milesyr']) charts['milesyr'].destroy();
