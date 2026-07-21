@@ -1,4 +1,3 @@
-
 # Palmarès
 
 *The work behind your records.*
