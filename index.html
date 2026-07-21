@@ -7010,10 +7010,31 @@ async function restartKomScan() {
   await renderKomScanUI();
 }
 
+// Keep the sport dropdown in step with Settings > Sports. Disabled sports'
+// options are REMOVED from the DOM, not hidden - Safari/WebKit (including
+// the iOS app's WKWebView) ignores the hidden attribute on <option> and
+// shows them anyway. If the currently-selected sport just got disabled,
+// fall back to All rather than showing an empty page.
+function syncKomFilterOptions() {
+  const sel = document.getElementById('kom-filter-select');
+  if (!sel) return;
+  if (komScanFilter !== 'all' && !sportEnabled(komScanFilter)) komScanFilter = 'all';
+  const labels = { all: 'All sports', road: 'Road bike', gravel: 'Gravel bike', mtb: 'Mountain bike', run: 'Run', trailrun: 'Trail run' };
+  const wanted = ['all'].concat(PALMARES_SPORTS.filter(sportEnabled));
+  // Only rebuild when the set actually changed, so an open dropdown isn't
+  // yanked out from under the user on unrelated re-renders.
+  const current = [...sel.options].map(o => o.value).join(',');
+  if (current !== wanted.join(',')) {
+    sel.innerHTML = wanted.map(k => '<option value="' + k + '">' + labels[k] + '</option>').join('');
+  }
+  sel.value = komScanFilter;
+}
+
 async function renderFullKomList() {
   const listEl = document.getElementById('full-kom-list');
   const totalsEl = document.getElementById('kom-scan-totals');
   if (!listEl || !athleteData) return;
+  syncKomFilterOptions();
 
   const progress = await getScanProgress(athleteData.id);
   const enrichedCache = (await getCached(athleteData.id, 'kom_enriched_details_v7', 7*24*60*60*1000)) || {};
