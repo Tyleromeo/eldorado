@@ -794,9 +794,11 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
           <span class="filter-label">Sport</span>
           <select class="filter-select" id="kom-filter-select" onchange="filterKomScan(this.value)">
             <option value="all" selected>All sports</option>
-            <option value="ride">Bike</option>
+            <option value="road">Road bike</option>
+            <option value="gravel">Gravel bike</option>
+            <option value="mtb">Mountain bike</option>
             <option value="run">Run</option>
-            <option value="hike">Hike</option>
+            <option value="trailrun">Trail run</option>
           </select>
         </div>
         <div class="filter-group">
@@ -1086,6 +1088,11 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <button class="gold-btn" onclick="saveSettings(); showToast('✅','Settings saved','Your preferences have been updated.')">Save settings</button>
   </div>
   <div class="card">
+    <div class="settings-title">Sports</div>
+    <div class="setting-sub" style="margin-bottom:10px">Choose the activity types you care about. Unchecked sports are hidden from your activity log and Palmarès records — they still count toward training load and streaks, so your fitness numbers stay honest.</div>
+    <div id="set-sports" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:2px 16px"></div>
+  </div>
+  <div class="card">
     <div class="settings-title">Data & sync</div>
     <div class="setting-row">
       <div><div class="setting-label">Force full resync</div><div class="setting-sub">Re-fetches your complete activity history from Strava and refreshes the cache. Normal loads use the cache and only pull new activities, so use this only if older data looks wrong (e.g. you edited or deleted an old activity on Strava).</div></div>
@@ -1296,6 +1303,80 @@ async function applyActivityGeometryCache(athleteId) {
   } catch(e) { console.log('Activity geometry cache read error:', e); }
 }
 
+// ==================== SPORTS ====================
+// Strava's newer sport_type field is what tells a gravel or MTB ride apart
+// from a road ride (the legacy type field lumps them all under 'Ride').
+// The activities cache table has no sport_type column, so it's persisted
+// the same way route geometry is: an api_cache map of {activity_id:
+// sport_type}, written on fresh fetches and re-applied after cache loads.
+// Old cached activities classify by legacy type until re-fetched - a
+// gravel ride from last year reads as "road" until a full resync.
+const SPORT_META = {
+  road:        { label: 'Road bike' },
+  gravel:      { label: 'Gravel bike' },
+  mtb:         { label: 'Mountain bike' },
+  run:         { label: 'Run' },
+  trailrun:    { label: 'Trail run' },
+  walk:        { label: 'Walk' },
+  hike:        { label: 'Hike' },
+  virtualride: { label: 'Virtual ride' },
+  virtualrun:  { label: 'Virtual run' },
+  other:       { label: 'Everything else (e-bike, swim, …)' }
+};
+// The Palmarès page only ever shows these - hikes, walks, virtual and misc
+// sports never produce meaningful segment records.
+const PALMARES_SPORTS = ['road', 'gravel', 'mtb', 'run', 'trailrun'];
+
+const TYPE_TO_SPORT = {
+  Ride: 'road', GravelRide: 'gravel', MountainBikeRide: 'mtb',
+  Run: 'run', TrailRun: 'trailrun',
+  Walk: 'walk', Hike: 'hike',
+  VirtualRide: 'virtualride', VirtualRun: 'virtualrun'
+};
+
+// Accepts an activity object (prefers sport_type) or a bare type string.
+function activitySportKey(aOrType) {
+  const t = typeof aOrType === 'string' ? aOrType : (aOrType && (aOrType.sport_type || aOrType.type));
+  return TYPE_TO_SPORT[t] || 'other';
+}
+
+// A sport is enabled unless the user has explicitly unchecked it in
+// Settings (missing key = enabled, so new sports default on).
+function sportEnabled(key) {
+  const en = getSettings().enabledSports;
+  return !en || en[key] !== false;
+}
+
+function palmaresSportAllowed(type) {
+  const key = activitySportKey(type);
+  return PALMARES_SPORTS.includes(key) && sportEnabled(key);
+}
+
+async function saveSportTypeCache(athleteId, activities, mergeExisting) {
+  try {
+    const fresh = {};
+    activities.forEach(function(a) {
+      if (a && a.id && a.sport_type && a.sport_type !== a.type) fresh[a.id] = a.sport_type;
+    });
+    if (!Object.keys(fresh).length) return;
+    let payload = fresh;
+    if (mergeExisting) {
+      const existing = await getCached(athleteId, 'sport_types_v1', 365*24*60*60*1000) || {};
+      payload = Object.assign({}, existing, fresh);
+    }
+    await setCached(athleteId, 'sport_types_v1', payload);
+  } catch(e) { console.log('Sport type cache write error:', e); }
+}
+
+async function applySportTypeCache(athleteId) {
+  try {
+    const cached = await getCached(athleteId, 'sport_types_v1', 365*24*60*60*1000) || {};
+    allActivities.forEach(function(a) {
+      if (!a.sport_type && cached[a.id]) a.sport_type = cached[a.id];
+    });
+  } catch(e) { console.log('Sport type cache read error:', e); }
+}
+
 // Writes activities to the Supabase cache without blocking the UI - failures
 // here should never interrupt the dashboard, since Strava remains the source
 // of truth and the cache is purely a rate-limit optimization.
@@ -1408,6 +1489,26 @@ function loadSettingsUI() {
   if (s.age) setVal('set-age', s.age);
   if (s.measuredVO2Max) setVal('set-measured-vo2', s.measuredVO2Max);
   renderEventSourceSettings();
+  renderSportSettings();
+}
+
+function renderSportSettings() {
+  const el = document.getElementById('set-sports');
+  if (!el) return;
+  el.innerHTML = Object.keys(SPORT_META).map(key =>
+    '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#e6edf3;cursor:pointer">' +
+      '<input type="checkbox" ' + (sportEnabled(key) ? 'checked' : '') + ' onchange="toggleSport(\'' + key + '\', this.checked)">' +
+      escapeHTML(SPORT_META[key].label) +
+    '</label>').join('');
+}
+
+function toggleSport(key, enabled) {
+  const s = getSettings();
+  s.enabledSports = s.enabledSports || {};
+  if (enabled) delete s.enabledSports[key]; else s.enabledSports[key] = false;
+  localStorage.setItem('ed_settings', JSON.stringify(s));
+  // Refresh the views the filter affects, if they've been rendered
+  try { if (allActivities.length) { renderActivityList(); renderFullKomList(); } } catch(e) {}
 }
 
 // ==================== GROUP EVENT SOURCE SETTINGS ====================
@@ -1965,6 +2066,7 @@ async function syncNow() {
     if (toSync.length) {
       syncActivitiesToSupabase(toSync, athleteData.id);
       saveActivityGeometryCache(athleteData.id, toSync, true);
+      saveSportTypeCache(athleteData.id, toSync, true);
     }
 
     if (newOnes.length || updated.length) {
@@ -2067,6 +2169,7 @@ async function loadAll(token) {
     setLoading('Loading activities...', `Using cached data (${cachedActivities.length} activities) — checking for new ones...`);
     allActivities = cachedActivities.map(mapCachedRowToActivity);
     await applyActivityGeometryCache(athlete.id);
+    await applySportTypeCache(athlete.id);
     const mostRecentCached = allActivities.length ? new Date(allActivities[0].start_date) : null;
     const cachedIds = new Set(allActivities.map(a => a.id));
 
@@ -2111,6 +2214,7 @@ async function loadAll(token) {
       if (toSync.length) {
         syncActivitiesToSupabase(toSync, athlete.id); // fire and forget cache update
         saveActivityGeometryCache(athlete.id, toSync, true); // preserve polylines for the Map heatmap
+        saveSportTypeCache(athlete.id, toSync, true); // preserve gravel/MTB/trail distinctions
       }
     } catch(e) { console.log('Incremental fetch error:', e); }
   } else {
@@ -2130,6 +2234,7 @@ async function loadAll(token) {
     localStorage.removeItem('ed_force_full_sync'); // one-shot: next load goes back to the fast cache path
     syncActivitiesToSupabase(allActivities, athlete.id); // fire and forget cache write
     saveActivityGeometryCache(athlete.id, allActivities, false); // preserve polylines for the Map heatmap
+    saveSportTypeCache(athlete.id, allActivities, false); // preserve gravel/MTB/trail distinctions
 
     // Log the actual date range covered so we can verify coverage directly,
     // rather than just trusting the activity count - a 2019 segment effort
@@ -2496,7 +2601,7 @@ async function scanKomChunk(token, athleteId) {
           const existingBest = progress.allSegmentBests[e.segment.id];
           if (!existingBest || e.elapsed_time < existingBest.elapsed) {
             progress.allSegmentBests[e.segment.id] = {
-              activity_id: ride.id, activity_name: ride.name, activity_type: ride.type,
+              activity_id: ride.id, activity_name: ride.name, activity_type: ride.sport_type || ride.type,
               segment_name: e.name, segment_id: e.segment.id,
               elapsed: e.elapsed_time, date: ride.start_date
             };
@@ -2505,7 +2610,7 @@ async function scanKomChunk(token, athleteId) {
           if (!e.achievements || !e.achievements.length) return;
           e.achievements.forEach(a => {
             const obj = {
-              activity_id: ride.id, activity_name: ride.name, activity_type: ride.type,
+              activity_id: ride.id, activity_name: ride.name, activity_type: ride.sport_type || ride.type,
               segment_name: e.name, segment_id: e.segment.id,
               elapsed: e.elapsed_time, rank: a.rank, category: a.type,
               date: ride.start_date
@@ -3313,7 +3418,7 @@ async function checkActivityAchievements(activity) {
             const existingBest = komProgress.allSegmentBests[e.segment.id];
             if (!existingBest || e.elapsed_time < existingBest.elapsed) {
               komProgress.allSegmentBests[e.segment.id] = {
-                activity_id: activity.id, activity_name: activity.name, activity_type: activity.type,
+                activity_id: activity.id, activity_name: activity.name, activity_type: activity.sport_type || activity.type,
                 segment_name: e.name, segment_id: e.segment.id,
                 elapsed: e.elapsed_time, date: activity.start_date
               };
@@ -3325,7 +3430,7 @@ async function checkActivityAchievements(activity) {
               // meaning nothing more than "your only attempt so far."
               if (ach.type !== 'overall') return;
               const obj = {
-                activity_id: activity.id, activity_name: activity.name, activity_type: activity.type,
+                activity_id: activity.id, activity_name: activity.name, activity_type: activity.sport_type || activity.type,
                 segment_name: e.name, segment_id: e.segment.id,
                 elapsed: e.elapsed_time, rank: ach.rank, category: ach.type,
                 date: activity.start_date
@@ -5657,6 +5762,18 @@ async function loadClubEvents() {
       } : null
     });
 
+    // Hand the ride list to the iOS app so it can schedule local reminder
+    // notifications (EventReminders.swift). Includes external calendar
+    // rides. No-op in a normal browser, like every notifyNative call.
+    notifyNative({
+      type: 'eventReminders',
+      events: upcoming.slice(0, 10).map(e => ({
+        title: e.title || 'Club event',
+        club: e.club_name || null,
+        date: e.nextDate.toISOString()
+      }))
+    });
+
     if (!upcoming.length) {
       // Say WHY it's empty. "No events" is indistinguishable from a silent
       // API/scope failure, which is what made the missing weekly club ride
@@ -6545,6 +6662,7 @@ function renderActivities() {
 
 function renderActivityList() {
   const filtered = allActivities.filter(a => {
+    if (!sportEnabled(activitySportKey(a))) return false; // Settings > Sports
     const typeMatch = actFilter === 'ride' ? (a.type === 'Ride' || a.type === 'VirtualRide' || a.type === 'EBikeRide')
       : actFilter === 'run' ? (a.type === 'Run' || a.type === 'TrailRun' || a.type === 'VirtualRun')
       : true;
@@ -6730,6 +6848,17 @@ function sportGroupForType(type) {
   if (type === 'Run' || type === 'TrailRun' || type === 'VirtualRun') return 'run';
   if (type === 'Hike' || type === 'Walk') return 'hike';
   return 'other';
+}
+
+// Central visibility rule for everything on the Palmarès page: the entry's
+// sport must be one Palmarès covers (road/gravel/MTB/run/trail run - never
+// hikes, walks, virtual or misc sports), enabled in Settings > Sports, and
+// matching the page's sport dropdown. Legacy note: achievements recorded
+// before sport_type was captured store 'Ride' for gravel/MTB rides, so
+// those classify as road until a rescan refreshes them.
+function komEntryVisible(type) {
+  if (!palmaresSportAllowed(type)) return false;
+  return komScanFilter === 'all' || activitySportKey(type) === komScanFilter;
 }
 
 function filterKomScan(group) {
@@ -6942,7 +7071,7 @@ async function renderFullKomList() {
   // Counts on the view toggle, matched to the current sport filter so the
   // toggle answers "how many of each do I have here?" without a round trip
   // through the other view.
-  const inSport = e => komScanFilter === 'all' || sportGroupForType(e.activity_type) === komScanFilter;
+  const inSport = e => komEntryVisible(e.activity_type);
   const komCountEl = document.getElementById('kom-count-koms');
   const top10CountEl = document.getElementById('kom-count-top10s');
   if (komCountEl) komCountEl.textContent = stillHeldKoms.filter(inSport).length;
@@ -6984,7 +7113,7 @@ async function renderFullKomList() {
     const displayNameCounts = {};
     const townEntries = {}; // key -> [{ name, sport, elapsed, date, is_kom, is_former }]
     function countInTown(entry, isKom) {
-      if (komScanFilter !== 'all' && sportGroupForType(entry.activity_type) !== komScanFilter) return;
+      if (!komEntryVisible(entry.activity_type)) return;
       const detail = enrichedCache[entry.segment_id];
       if (!detail || !detail.city) return;
       const key = normalizeKey(detail.city, detail.state);
@@ -7056,25 +7185,29 @@ async function renderFullKomList() {
     }
   }
 
-  const koms = stillHeldKoms.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
-  const top10s = allTop10s.filter(k => komScanFilter === 'all' || sportGroupForType(k.activity_type) === komScanFilter);
+  const koms = stillHeldKoms.filter(k => komEntryVisible(k.activity_type));
+  const top10s = allTop10s.filter(k => komEntryVisible(k.activity_type));
 
   if (totalsEl) {
-    const bikeKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
-    const runKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'run').length;
-    const hikeKoms = stillHeldKoms.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
-    const bikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'ride').length;
-    const runTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'run').length;
-    const hikeTop10s = allTop10s.filter(k => sportGroupForType(k.activity_type) === 'hike').length;
+    // One KOM/Top-10 chip pair per Palmarès sport that's enabled in
+    // Settings and has any records. Hikes/walks/misc never appear here.
+    const chipLabel = { road: 'Road', gravel: 'Gravel', mtb: 'MTB', run: 'Run', trailrun: 'Trail run' };
+    const chipSports = PALMARES_SPORTS.filter(key => sportEnabled(key) && (
+      stillHeldKoms.some(k => activitySportKey(k.activity_type) === key) ||
+      allTop10s.some(k => activitySportKey(k.activity_type) === key)
+    ));
+    const shown = chipSports.length ? chipSports : PALMARES_SPORTS.filter(k => sportEnabled(k)).slice(0, 2);
     const enrichedCount = [...new Set([...achievementSegmentIds, ...Object.keys(progress.allSegmentBests || {})])].filter(id => enrichedCache[id]).length;
     const totalSegments = new Set([...achievementSegmentIds, ...Object.keys(progress.allSegmentBests || {})]).size;
     totalsEl.innerHTML =
-      '<div class="metric"><div class="metric-label">Bike KOMs</div><div class="metric-val" style="color:#C9A227">' + bikeKoms + '</div><div class="metric-sub">currently held</div></div>' +
-      '<div class="metric"><div class="metric-label">Run KOMs</div><div class="metric-val" style="color:#C9A227">' + runKoms + '</div><div class="metric-sub">currently held</div></div>' +
-      '<div class="metric"><div class="metric-label">Hike KOMs</div><div class="metric-val" style="color:#C9A227">' + hikeKoms + '</div><div class="metric-sub">currently held</div></div>' +
-      '<div class="metric"><div class="metric-label">Bike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + bikeTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>' +
-      '<div class="metric"><div class="metric-label">Run Top 10s</div><div class="metric-val" style="color:#58a6ff">' + runTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>' +
-      '<div class="metric"><div class="metric-label">Hike Top 10s</div><div class="metric-val" style="color:#58a6ff">' + hikeTop10s + '</div><div class="metric-sub">includes former KOMs</div></div>';
+      shown.map(key =>
+        '<div class="metric"><div class="metric-label">' + chipLabel[key] + ' KOMs</div><div class="metric-val" style="color:#C9A227">' +
+          stillHeldKoms.filter(k => activitySportKey(k.activity_type) === key).length +
+        '</div><div class="metric-sub">currently held</div></div>').join('') +
+      shown.map(key =>
+        '<div class="metric"><div class="metric-label">' + chipLabel[key] + ' Top 10s</div><div class="metric-val" style="color:#58a6ff">' +
+          allTop10s.filter(k => activitySportKey(k.activity_type) === key).length +
+        '</div><div class="metric-sub">includes former KOMs</div></div>').join('');
     if (enrichedCount < totalSegments) {
       totalsEl.innerHTML += '<div style="grid-column:1/-1;font-size:12px;color:#7d8590;margin-top:4px">KOM counts above only reflect the ' + enrichedCount + ' of ' + totalSegments + ' segments enriched so far - finish enriching for fully accurate totals.</div>';
     }
@@ -7117,8 +7250,15 @@ async function renderFullKomList() {
       detailLine = '<div class="row-meta" style="margin-top:2px">' + [distMi, elevFt].filter(Boolean).join(' &middot; ') + rankOfStr + '</div>';
     }
 
-    const sportBadge = sportGroupForType(e.activity_type) === 'run' ? ' <span class="badge b-run">RUN</span>'
-      : sportGroupForType(e.activity_type) === 'hike' ? ' <span class="badge" style="background:#21262d;color:#7d8590">HIKE</span>' : '';
+    // Road rides are the default and carry no badge; everything else gets
+    // labeled so gravel/MTB/trail records stand out in a mixed list.
+    const sportBadges = {
+      run: ' <span class="badge b-run">RUN</span>',
+      trailrun: ' <span class="badge b-run">TRAIL</span>',
+      gravel: ' <span class="badge" style="background:#2a2114;color:#d29922;border:1px solid #d29922">GRAVEL</span>',
+      mtb: ' <span class="badge" style="background:#1a2a1a;color:#3fb950;border:1px solid #3fb950">MTB</span>'
+    };
+    const sportBadge = sportBadges[activitySportKey(e.activity_type)] || '';
 
     let rankBadge;
     if (isKom && e.passiveKom) {
