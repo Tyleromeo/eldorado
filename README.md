@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/30230291/README.md)
+
 # Palmarès
 
 *The work behind your records.*
