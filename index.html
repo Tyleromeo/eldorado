@@ -330,12 +330,12 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <script>if (window.isPalmaresNativeApp || window.isEldoradoNativeApp) document.body.classList.add('native-app');</script>
 
 <nav class="nav">
-  <div class="logo" onclick="showSection('dashboard')">Palmarès<span>training intelligence</span></div>
+  <div class="logo" onclick="showSection('dashboard')">Palmarès<span>The work behind your records</span></div>
   <div class="nav-links" id="nav-links" style="display:none">
     <button class="nav-btn active" data-section="dashboard" onclick="showSection('dashboard')">Today</button>
     <button class="nav-btn" data-section="performance" onclick="showSection('performance')">Train</button>
-    <button class="nav-btn" data-section="segments" onclick="showSection('segments')">Segments</button>
-    <button class="nav-btn" data-section="map" onclick="showSection('map')">Map</button>
+    <button class="nav-btn" data-section="segments" onclick="showSection('segments')">Palmarès</button>
+    <button class="nav-btn" data-section="map" onclick="showSection('map')">Scout</button>
     <button class="nav-btn" data-section="activities" onclick="showSection('activities')">Log</button>
   </div>
   <div class="nav-bottom">
@@ -410,6 +410,18 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
     <div id="today-opportunity-body" style="font-size:13px;color:#7d8590">Loading...</div>
   </div>
+
+  <div class="card" style="margin-top:1.5rem">
+    <div class="card-title">
+      <div class="card-title-left">
+        <svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Upcoming group events
+      </div>
+      <span id="events-count" style="font-size:12px;color:#7d8590"></span>
+    </div>
+    <div id="events-list"><div style="font-size:12px;color:#7d8590;padding:8px 0">Loading club events...</div></div>
+  </div>
+
 </div>
 
 
@@ -734,16 +746,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
-  <div class="card" style="margin-top:1.5rem">
-    <div class="card-title">
-      <div class="card-title-left">
-        <svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Upcoming group events
-      </div>
-      <span id="events-count" style="font-size:12px;color:#7d8590"></span>
-    </div>
-    <div id="events-list"><div style="font-size:12px;color:#7d8590;padding:8px 0">Loading club events...</div></div>
-  </div>
+  
 
   <div class="card" id="collapse-gear" style="margin-top:2rem">
     <div class="card-title collapse-head" onclick="toggleCollapse('gear')">
@@ -760,7 +763,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
 <!-- SEGMENTS -->
 <div id="section-segments" class="section">
-  <div class="section-header"><h2>Segments & achievements</h2><p>Your complete KOM and Top 10 history, built from a full scan of all your activities.</p></div>
+  <div class="section-header"><h2>Palmarès</h2><p>Your complete KOM and Top 10 history, built from a full scan of all your activities — the work behind your records.</p></div>
 
   <div class="card" id="collapse-koms">
     <div class="card-title collapse-head" onclick="toggleCollapse('koms')">
@@ -807,6 +810,16 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
+  
+
+
+  
+
+</div>
+<!-- MAP -->
+<div id="section-map" class="section">
+  <div class="section-header"><h2>Scout</h2><p>Where to ride — tailwind segments, segment hunting, route building, road reports, and the full forecast.</p></div>
+
   <div class="card" id="collapse-tailwind">
     <div class="card-title collapse-head" onclick="toggleCollapse('tailwind')">
       <div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>Tailwind segments</div>
@@ -833,13 +846,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
-
-  
-
-</div>
-<!-- MAP -->
-<div id="section-map" class="section">
-  <div class="section-header"><h2>Map</h2><p>Where to ride — segment hunting, route building, road reports, and the full forecast.</p></div>
   <div class="card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21 1 6"/><line x1="8" y1="3" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/></svg>Segment hunter map</div>
@@ -1404,10 +1410,10 @@ function showSection(name) {
   // tailwind list, so any of those entry points warms it.
   if ((name === 'dashboard' || name === 'map' || name === 'segments') && !weatherLoaded) { weatherLoaded = true; loadWeather(); }
   if (name === 'map' && !roadReportsLoaded) { roadReportsLoaded = true; loadRoadReports(); }
-  if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); applyCollapseState(); } catch(e) { console.error('renderMap:', e); } }, 80); }
+  if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); renderTailwindSegments(currentWxDayIdx); applyCollapseState(); } catch(e) { console.error('renderMap:', e); } }, 80); }
   if (name === 'settings') { try { loadSettingsUI(); } catch(e) { console.error('loadSettingsUI:', e); } }
   if (name === 'activities' && allActivities.length) { try { renderActivities(); renderHeatmap(); renderCollaborators(collabFilter||'all'); renderGear(); renderStreaks(); applyCollapseState(); } catch(e) { console.error('renderActivities:', e); } }
-  if (name === 'segments' && allActivities.length) { try { renderKomScanUI(); renderTailwindSegments(currentWxDayIdx); applyCollapseState(); } catch(e) { console.error('renderKomScanUI:', e); } }
+  if (name === 'segments' && allActivities.length) { try { renderKomScanUI(); applyCollapseState(); } catch(e) { console.error('renderKomScanUI:', e); } }
   if (name === 'performance' && allActivities.length) {
     setTimeout(function() {
       try {
