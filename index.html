@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ElDorado</title>
+<title>Palmarès</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -330,7 +330,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <script>if (window.isEldoradoNativeApp) document.body.classList.add('native-app');</script>
 
 <nav class="nav">
-  <div class="logo" onclick="showSection('dashboard')">ElDorado<span>training intelligence</span></div>
+  <div class="logo" onclick="showSection('dashboard')">Palmarès<span>training intelligence</span></div>
   <div class="nav-links" id="nav-links" style="display:none">
     <button class="nav-btn active" data-section="dashboard" onclick="showSection('dashboard')">Today</button>
     <button class="nav-btn" data-section="performance" onclick="showSection('performance')">Train</button>
@@ -352,7 +352,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <div id="connect-view">
   <div class="connect-wrap">
     <div class="connect-card">
-      <h2>ElDorado</h2>
+      <h2>Palmarès</h2>
       <p>Your personal training intelligence dashboard. Connects to Strava for real-time fitness data, power analysis, gear tracking, and personalized coaching.</p>
       <button class="strava-btn" onclick="connectStrava()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
@@ -917,7 +917,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Road work reports</div>
     </div>
     <div class="collapse-body">
-      <p style="font-size:12px;color:#7d8590;margin-bottom:12px">Community-reported repaving around Long Island — know which roads to avoid while they're stripped, and where the fresh tarmac is. Reports are shared with everyone using ElDorado.</p>
+      <p style="font-size:12px;color:#7d8590;margin-bottom:12px">Community-reported repaving around Long Island — know which roads to avoid while they're stripped, and where the fresh tarmac is. Reports are shared with everyone using Palmarès.</p>
       <div id="road-reports-list" style="margin-bottom:14px;font-size:13px;color:#7d8590">Loading reports...</div>
       <div style="border-top:1px solid #21262d;padding-top:12px">
         <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:8px">Report road work</div>
@@ -968,6 +968,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
           
           <div class="card-title" style="margin-top:1.5rem"><div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>7-day wind speeds</div></div>
           <div class="chart-wrap chart-wrap-md"><canvas id="wx-wind-chart"></canvas></div>
+          <div id="wx-attribution"></div>
         </div>
       </div>
     </div>
@@ -977,7 +978,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
 <!-- SETTINGS -->
 <div id="section-settings" class="section">
-  <div class="section-header"><h2>Settings</h2><p>Personalize ElDorado with your stats. These are used for all calculations.</p></div>
+  <div class="section-header"><h2>Settings</h2><p>Personalize Palmarès with your stats. These are used for all calculations.</p></div>
   <div class="card">
     <div class="settings-section">
       <div class="settings-title">Athlete profile</div>
@@ -1120,6 +1121,10 @@ const WEIGHT_KG = 75;
 //   sync_activities { athlete, activities } -> ok
 //   load_power_prs { athlete_id } -> { prs }
 //   patch_achievement_counts { corrections } -> ok
+//   list_road_reports {} -> { reports }
+//   add_road_report { road_name, town, status, note, reported_by, athlete_id } -> { report }
+//   get_weather { lat, lon } -> { weather } (Open-Meteo-shaped, from Apple WeatherKit)
+//                               or { available: false } if WeatherKit secrets unset
 //   disconnect { session_id } -> ok
 async function callEdge(action, payload) {
   const headers = { 'Content-Type': 'application/json' };
@@ -1424,7 +1429,7 @@ let roadReportsLoaded = false;
 
 // ==================== ROAD WORK REPORTS ====================
 // Community-shared repaving reports, stored in Supabase via the Edge
-// Function (list_road_reports / add_road_report) - every ElDorado user
+// Function (list_road_reports / add_road_report) - every Palmarès user
 // sees and contributes to the same feed. Built because no public feed
 // covers town-level repaving on Long Island; the highway departments
 // post to PDFs and Facebook, not anything an app can reliably pull.
@@ -2548,7 +2553,8 @@ function renderTodayCards() {
           '<div style="margin-left:auto;text-align:right"><div style="font-size:18px;font-weight:600;color:' + windColor + '">' + windArrow(d.winddirection_10m_dominant[0]) + ' ' + wind + ' mph</div>' +
           '<div style="font-size:12px;color:#7d8590">' + dir + ' wind</div></div>' +
         '</div>' +
-        buildRideAdvisory(d, 0);
+        buildRideAdvisory(d, 0) +
+        weatherAttributionHTML();
     }
   }
 
@@ -5109,12 +5115,36 @@ function cToF(c) { return Math.round(c * 9/5 + 32); }
 
 async function loadWeather() {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant,precipitation_sum,precipitation_probability_max&hourly=temperature_2m,apparent_temperature,weathercode,windspeed_10m,winddirection_10m,precipitation_probability,precipitation&windspeed_unit=ms&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=7`;
-    const data = await fetch(url).then(r=>r.json());
+    // Apple WeatherKit first, via the Edge Function (the signing key can't
+    // live in browser JS, and WeatherKit is the commercially-licensed
+    // source now). The function returns data already in the Open-Meteo
+    // shape this file has always consumed. Until the WeatherKit secrets
+    // are configured server-side it answers { available: false } and we
+    // fall back to Open-Meteo - fine while the site remains free, and the
+    // cutover needs no frontend change at all.
+    let data = null;
+    try {
+      const res = await callEdge('get_weather', { lat: WX_LAT, lon: WX_LON });
+      if (res && res.weather && res.weather.daily) data = res.weather;
+    } catch(e) { console.log('WeatherKit proxy unavailable, using Open-Meteo fallback:', e); }
+    if (!data) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${WX_LAT}&longitude=${WX_LON}&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max,winddirection_10m_dominant,precipitation_sum,precipitation_probability_max&hourly=temperature_2m,apparent_temperature,weathercode,windspeed_10m,winddirection_10m,precipitation_probability,precipitation&windspeed_unit=ms&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=7`;
+      data = await fetch(url).then(r=>r.json());
+      data._source = 'open-meteo';
+    }
     renderWeather(data);
   } catch(e) {
     document.getElementById('wx-loading').textContent = 'Weather unavailable: ' + e.message;
   }
+}
+
+// Apple requires visible attribution wherever WeatherKit data is shown.
+function weatherAttributionHTML() {
+  const data = window._wxData;
+  if (data && data._source === 'weatherkit') {
+    return '<div style="margin-top:10px;font-size:11px;color:#57606a"> Apple Weather &middot; <a href="https://weatherkit.apple.com/legal-attribution.html" target="_blank" rel="noopener noreferrer" style="color:#57606a">Data sources</a></div>';
+  }
+  return '<div style="margin-top:10px;font-size:11px;color:#57606a">Forecast by Open-Meteo</div>';
 }
 
 // Fetches active NWS (National Weather Service) alerts for the user's
@@ -5128,7 +5158,7 @@ async function fetchAndRenderWxAlerts() {
   if (!el) return;
   try {
     const resp = await fetch(`https://api.weather.gov/alerts/active?point=${WX_LAT},${WX_LON}`, {
-      headers: { 'User-Agent': 'ElDorado Training Intelligence Dashboard' }
+      headers: { 'User-Agent': 'Palmares Training Intelligence Dashboard' }
     });
     if (!resp.ok) { el.innerHTML = ''; return; }
     const data = await resp.json();
@@ -5279,6 +5309,8 @@ function renderWeather(data) {
   document.getElementById('wx-advisory').innerHTML = advisory;
   renderTailwindSegments(0);
   renderTodayCards(); // Today's compact conditions + opportunity cards feed off this same fetch
+  const attrEl = document.getElementById('wx-attribution');
+  if (attrEl) attrEl.innerHTML = weatherAttributionHTML();
 
   // 7-day wind chart
   if (charts['wxwind']) charts['wxwind'].destroy();
@@ -5781,7 +5813,7 @@ function showError(msg) {
   document.getElementById('connect-view').style.display='block';
   document.getElementById('error-view').style.display='block';
   document.getElementById('error-msg').textContent = msg;
-  console.error('ElDorado error:', msg);
+  console.error('Palmarès error:', msg);
 }
 
 
@@ -6770,7 +6802,7 @@ function setRouteMode(mode) {
     : '';
 
   if (routeMode === 'manual') {
-    setRouteStatus(prefix + 'Trail/Manual mode: click directly along the trail. ElDorado will connect your clicked points exactly instead of snapping to roads. Use more points around turns.');
+    setRouteStatus(prefix + 'Trail/Manual mode: click directly along the trail. Palmarès will connect your clicked points exactly instead of snapping to roads. Use more points around turns.');
   } else if (routeMode === 'foot') {
     setRouteStatus(prefix + 'Run/Walk auto mode: OSRM foot routing will try pedestrian paths and trails, but some park trails may be missing from its routing graph. Switch back to Trail/Manual anytime for the next leg.');
   } else {
@@ -6895,14 +6927,17 @@ function interpolateManualLeg(a, b, spacingMeters) {
 
 
 async function fetchElevations(points) {
-  // Open-Meteo elevation endpoint accepts up to 100 lat/lng pairs per call
-  const lats = points.map(function(p){ return p[0]; }).join(',');
-  const lngs = points.map(function(p){ return p[1]; }).join(',');
-  const url = 'https://api.open-meteo.com/v1/elevation?latitude=' + lats + '&longitude=' + lngs;
-  const resp = await fetch(url);
+  // Open-Elevation (free, commercial use permitted) - swapped from
+  // Open-Meteo's elevation endpoint, whose free tier is licensed
+  // non-commercial only, same as its forecast API. Same SRTM-derived data.
+  const resp = await fetch('https://api.open-elevation.com/api/v1/lookup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locations: points.map(function(p){ return { latitude: p[0], longitude: p[1] }; }) })
+  });
   if (!resp.ok) throw new Error('Elevation API returned ' + resp.status);
   const data = await resp.json();
-  return data.elevation || [];
+  return (data.results || []).map(function(r){ return r.elevation; });
 }
 
 function renderRoutePolyline() {
@@ -7264,9 +7299,9 @@ function routeToGPX(route, nameOverride) {
     });
   });
   const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-  const routeName = nameOverride || route.name || 'ElDorado route';
+  const routeName = nameOverride || route.name || 'Palmarès route';
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<gpx version="1.1" creator="ElDorado Training Intelligence" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+    '<gpx version="1.1" creator="Palmarès Training Intelligence" xmlns="http://www.topografix.com/GPX/1/1">\n' +
     '  <metadata>\n' +
     '    <name>' + escapeXML(routeName) + '</name>\n' +
     '    <time>' + now + '</time>\n' +
@@ -7296,7 +7331,7 @@ async function downloadSavedRouteGPX(id) {
   const routes = await loadSavedRouteCollection();
   const r = routes.find(function(x){ return x.id === id; });
   if (!r) return;
-  downloadGPXString(routeToGPX(r), (r.name || 'eldorado-route').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') + '.gpx');
+  downloadGPXString(routeToGPX(r), (r.name || 'palmares-route').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') + '.gpx');
 }
 
 function downloadRouteGPX() {
@@ -7306,9 +7341,9 @@ function downloadRouteGPX() {
     return;
   }
   const totals = getRouteTotals();
-  const routeName = 'ElDorado ' + (routeMode === 'bike' ? 'bike' : (routeMode === 'manual' ? 'trail run' : 'run')) + ' route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const routeName = 'Palmarès ' + (routeMode === 'bike' ? 'bike' : (routeMode === 'manual' ? 'trail run' : 'run')) + ' route ' + new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const route = { name: routeName, mode: routeMode, legs: routeLegs, distanceM: totals.distanceM, ascentM: totals.ascentM };
-  downloadGPXString(routeToGPX(route, routeName), 'eldorado-route-' + new Date().toISOString().slice(0, 10) + '.gpx');
+  downloadGPXString(routeToGPX(route, routeName), 'palmares-route-' + new Date().toISOString().slice(0, 10) + '.gpx');
   setRouteStatus('GPX downloaded. Import to Garmin Connect (Training → Courses → Import Course), then Send to Device.');
 }
 
