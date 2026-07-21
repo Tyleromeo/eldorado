@@ -330,7 +330,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <script>if (window.isPalmaresNativeApp || window.isEldoradoNativeApp) document.body.classList.add('native-app');</script>
 
 <nav class="nav">
-  <div class="logo" onclick="showSection('dashboard')">Palmarès<span>The work behind your records</span></div>
+  <div class="logo" onclick="showSection('dashboard')">Palmarès<span>Your training. Your records.</span></div>
   <div class="nav-links" id="nav-links" style="display:none">
     <button class="nav-btn active" data-section="dashboard" onclick="showSection('dashboard')">Today</button>
     <button class="nav-btn" data-section="performance" onclick="showSection('performance')">Train</button>
@@ -340,6 +340,9 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   </div>
   <div class="nav-bottom">
     <div class="status-pill"><span class="dot" id="dot"></span><span id="auth-name">not connected</span></div>
+    <button class="settings-icon-btn" id="sync-now-btn" onclick="syncNow()" title="Sync latest from Strava" aria-label="Sync latest from Strava" style="display:none">
+      <svg id="sync-now-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    </button>
     <button class="settings-icon-btn" onclick="showSection('settings')" title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
@@ -768,7 +771,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
 <!-- SEGMENTS -->
 <div id="section-segments" class="section">
-  <div class="section-header"><h2>Palmarès</h2><p>Your complete KOM and Top 10 history, built from a full scan of all your activities — the work behind your records.</p></div>
+  <div class="section-header"><h2>Palmarès</h2><p>Your complete KOM and Top 10 history, built from a full scan of all your activities — your training, your records.</p></div>
 
   <div class="card" id="collapse-koms">
     <div class="card-title collapse-head" onclick="toggleCollapse('koms')">
@@ -929,6 +932,18 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
     <div class="collapse-body">
       <p style="font-size:12px;color:#7d8590;margin-bottom:12px">Community-reported repaving around Long Island — know which roads to avoid while they're stripped, and where the fresh tarmac is. Reports are shared with everyone using Palmarès.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <span style="font-size:12px;color:#7d8590">Near</span>
+        <input type="text" id="road-filter-zip" placeholder="ZIP" inputmode="numeric" maxlength="5" style="width:70px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;font-size:13px;color:#e6edf3" onchange="setRoadFilter()" />
+        <select id="road-filter-radius" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;font-size:13px;color:#e6edf3" onchange="setRoadFilter()">
+          <option value="">Any distance</option>
+          <option value="5">Within 5 mi</option>
+          <option value="10">Within 10 mi</option>
+          <option value="25">Within 25 mi</option>
+          <option value="50">Within 50 mi</option>
+        </select>
+        <span id="road-filter-status" style="font-size:11px;color:#57606a"></span>
+      </div>
       <div id="road-reports-list" style="margin-bottom:14px;font-size:13px;color:#7d8590">Loading reports...</div>
       <div style="border-top:1px solid #21262d;padding-top:12px">
         <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:8px">Report road work</div>
@@ -1075,6 +1090,24 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div class="setting-row">
       <div><div class="setting-label">Force full resync</div><div class="setting-sub">Re-fetches your complete activity history from Strava and refreshes the cache. Normal loads use the cache and only pull new activities, so use this only if older data looks wrong (e.g. you edited or deleted an old activity on Strava).</div></div>
       <button onclick="forceFullResync()" style="background:#1a2332;border:1px solid #58a6ff;border-radius:6px;padding:6px 14px;color:#58a6ff;cursor:pointer;font-size:13px">Resync now</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="settings-title">Group events</div>
+    <div class="settings-section">
+      <div class="setting-label" style="margin-bottom:4px">Strava clubs</div>
+      <div class="setting-sub" style="margin-bottom:8px">Choose which of your clubs' events show on the Today page. Clubs appear here after the events card has loaded at least once.</div>
+      <div id="set-event-clubs"><span style="font-size:12px;color:#7d8590">No clubs discovered yet.</span></div>
+    </div>
+    <div class="settings-section">
+      <div class="setting-label" style="margin-bottom:4px">External ride calendars</div>
+      <div class="setting-sub" style="margin-bottom:8px">Websites with ride listings (like sbraweb.org) or .ics calendar feeds, merged into upcoming events.</div>
+      <div id="set-ext-calendars"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input class="setting-input" id="set-extcal-url" type="url" placeholder="https://club.org/rides" style="width:240px;text-align:left" />
+        <input class="setting-input" id="set-extcal-label" type="text" placeholder="Label (optional)" style="width:130px;text-align:left" />
+        <button class="gold-btn" style="margin-top:0" onclick="addExtCalendar()">Add</button>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -1332,7 +1365,11 @@ function getSettings() {
 
 function saveSettings() {
   const getVal = (id, fb) => { const el = document.getElementById(id); return el ? el.value : fb; };
-  const s = {
+  // Start from the stored settings, not a fresh object: settings written
+  // programmatically (event club toggles, external calendars, road report
+  // filter) have no form field here and would otherwise be erased every
+  // time any input's onchange fired.
+  const s = Object.assign({}, getSettings(), {
     ftp: parseInt(getVal('set-ftp', DEFAULTS.ftp)) || DEFAULTS.ftp,
     weight: parseFloat(getVal('set-weight', DEFAULTS.weight)) || DEFAULTS.weight,
     runPace: getVal('set-run-pace', DEFAULTS.runPace) || DEFAULTS.runPace,
@@ -1346,7 +1383,7 @@ function saveSettings() {
     mapStyle: getVal('set-map-style', DEFAULTS.mapStyle) || DEFAULTS.mapStyle,
     age: parseInt(getVal('set-age', '')) || null,
     measuredVO2Max: parseFloat(getVal('set-measured-vo2', '')) || null
-  };
+  });
   localStorage.setItem('ed_settings', JSON.stringify(s));
   window.USER_FTP = s.ftp;
   window.USER_WEIGHT = s.weight;
@@ -1370,6 +1407,78 @@ function loadSettingsUI() {
   setVal('set-map-style', s.mapStyle || DEFAULTS.mapStyle);
   if (s.age) setVal('set-age', s.age);
   if (s.measuredVO2Max) setVal('set-measured-vo2', s.measuredVO2Max);
+  renderEventSourceSettings();
+}
+
+// ==================== GROUP EVENT SOURCE SETTINGS ====================
+// Club include/exclude toggles + external calendar list under Settings.
+// Any change re-runs loadClubEvents so the Today card reflects it at once
+// (the events cache key incorporates the exclusion set, so no stale hits).
+function renderEventSourceSettings() {
+  const s = getSettings();
+  const clubsEl = document.getElementById('set-event-clubs');
+  if (clubsEl) {
+    const known = s.knownClubs || [];
+    const excluded = new Set((s.eventClubExcluded || []).map(String));
+    clubsEl.innerHTML = known.length
+      ? known.map(c =>
+          '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#e6edf3;cursor:pointer">' +
+            '<input type="checkbox" ' + (excluded.has(String(c.id)) ? '' : 'checked') + ' onchange="toggleEventClub(\'' + c.id + '\', this.checked)">' +
+            escapeHTML(c.name) +
+          '</label>').join('')
+      : '<span style="font-size:12px;color:#7d8590">No clubs discovered yet — open the Today page once while connected.</span>';
+  }
+  const extEl = document.getElementById('set-ext-calendars');
+  if (extEl) {
+    const cals = s.extCalendars || [];
+    extEl.innerHTML = cals.length
+      ? cals.map((c, i) =>
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0">' +
+            '<div style="font-size:13px;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHTML(c.label || calendarHostname(c.url)) + ' <span style="color:#57606a;font-size:11px">' + escapeHTML(c.url) + '</span></div>' +
+            '<button onclick="removeExtCalendar(' + i + ')" style="background:transparent;border:1px solid #f85149;border-radius:6px;color:#f85149;cursor:pointer;font-size:11px;padding:2px 8px;flex-shrink:0">Remove</button>' +
+          '</div>').join('')
+      : '<span style="font-size:12px;color:#7d8590">None added yet.</span>';
+  }
+}
+
+function toggleEventClub(clubId, included) {
+  const s = getSettings();
+  const excluded = new Set((s.eventClubExcluded || []).map(String));
+  if (included) excluded.delete(String(clubId)); else excluded.add(String(clubId));
+  s.eventClubExcluded = [...excluded];
+  localStorage.setItem('ed_settings', JSON.stringify(s));
+  reloadClubEvents();
+}
+
+function addExtCalendar() {
+  const urlEl = document.getElementById('set-extcal-url');
+  const labelEl = document.getElementById('set-extcal-label');
+  const url = (urlEl.value || '').trim();
+  if (!/^https?:\/\/.+\..+/.test(url)) { showToast('⚠️', 'Invalid URL', 'Enter a full address starting with https://'); return; }
+  const s = getSettings();
+  s.extCalendars = (s.extCalendars || []).concat([{ url: url, label: (labelEl.value || '').trim() || null }]);
+  localStorage.setItem('ed_settings', JSON.stringify(s));
+  urlEl.value = ''; labelEl.value = '';
+  renderEventSourceSettings();
+  reloadClubEvents();
+}
+
+function removeExtCalendar(index) {
+  const s = getSettings();
+  const cals = s.extCalendars || [];
+  const removed = cals.splice(index, 1)[0];
+  s.extCalendars = cals;
+  localStorage.setItem('ed_settings', JSON.stringify(s));
+  if (removed) { try { localStorage.removeItem('ed_extcal:' + removed.url); } catch(e) {} }
+  renderEventSourceSettings();
+  reloadClubEvents();
+}
+
+function reloadClubEvents() {
+  eventsLoaded = false;
+  const list = document.getElementById('events-list');
+  if (list) list.innerHTML = '<div style="font-size:12px;color:#7d8590;padding:8px 0">Refreshing events...</div>';
+  loadClubEvents();
 }
 
 function disconnectStrava() {
@@ -1450,35 +1559,223 @@ const ROAD_STATUS_META = {
   fresh:    { label: 'FRESH TARMAC',     color: '#3fb950', icon: '✅' }
 };
 
+// Lifecycle rides inside the note field because the server validates
+// status to exactly milled|repaving|fresh (verified empirically - it
+// rejects anything else). A report whose note starts with:
+//   [cleared] - marks the road resolved; the whole road hides unless a
+//               NEWER primary report re-flags it
+//   [confirm] - confirms the road's current status ("3 riders confirm")
+// Since web and the iOS WebView both load this same hosted page, the
+// convention deploys atomically - there are no old clients to confuse.
+// Fresh tarmac additionally auto-expires: after 60 days it isn't news.
+const ROAD_FRESH_EXPIRE_DAYS = 60;
+const ROAD_STALE_HINT_DAYS = 90;
+
+let _roadReportsRaw = [];
+let _roadGroups = [];
+
 async function loadRoadReports() {
   const el = document.getElementById('road-reports-list');
   if (!el) return;
+  // Reflect the saved filter in the controls (first open of the Scout page)
+  const sf = getSettings();
+  const zipEl = document.getElementById('road-filter-zip');
+  const radEl = document.getElementById('road-filter-radius');
+  if (zipEl && !zipEl.value && sf.roadZip) zipEl.value = sf.roadZip;
+  if (radEl && !radEl.value && sf.roadRadius) radEl.value = sf.roadRadius;
   try {
     const data = await callEdge('list_road_reports', {});
-    renderRoadReports(data.reports || []);
+    _roadReportsRaw = data.reports || [];
+    renderRoadReports();
   } catch(e) {
     el.innerHTML = '<span style="color:#7d8590">Could not load road reports.</span>';
   }
 }
 
-function renderRoadReports(reports) {
+function roadNoteTag(r) {
+  const m = /^\[(cleared|confirm)\]\s*/i.exec(r.note || '');
+  return m ? m[1].toLowerCase() : null;
+}
+
+function groupRoadReports(reports) {
+  const byKey = new Map();
+  const sorted = [...reports].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+  for (const r of sorted) {
+    const key = (r.road_name || '').trim().toLowerCase() + '|' + (r.town || '').trim().toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(r);
+  }
+  const groups = [];
+  const now = Date.now();
+  for (const rows of byKey.values()) {
+    const primaries = rows.filter(r => !roadNoteTag(r));
+    if (!primaries.length) continue; // only confirms/clears with no report: nothing to show
+    const latest = primaries[primaries.length - 1];
+    const latestAt = new Date(latest.created_at || 0);
+    const confirms = rows.filter(r => roadNoteTag(r) === 'confirm' && new Date(r.created_at || 0) > latestAt);
+    const cleared = rows.some(r => roadNoteTag(r) === 'cleared' && new Date(r.created_at || 0) > latestAt);
+    if (cleared) continue;
+    const ageDays = latest.created_at ? Math.floor((now - latestAt.getTime()) / 86400000) : 0;
+    if (latest.status === 'fresh' && ageDays > ROAD_FRESH_EXPIRE_DAYS) continue;
+    groups.push({ report: latest, confirms: confirms.length, ageDays });
+  }
+  groups.sort((a, b) => new Date(b.report.created_at || 0) - new Date(a.report.created_at || 0));
+  return groups;
+}
+
+async function renderRoadReports() {
   const el = document.getElementById('road-reports-list');
   if (!el) return;
-  if (!reports.length) {
-    el.innerHTML = '<span style="color:#7d8590">No road work reported yet — be the first below.</span>';
+  let groups = groupRoadReports(_roadReportsRaw);
+
+  // Distance filter: zip -> center point, report towns geocoded (cached).
+  // Reports with no town, or towns that fail to geocode, stay visible -
+  // hiding a "road stripped" hazard because a lookup failed would be worse
+  // than showing one report from a town over.
+  const s = getSettings();
+  const statusEl = document.getElementById('road-filter-status');
+  if (s.roadZip && s.roadRadius) {
+    const center = await geocodeZip(s.roadZip);
+    if (center) {
+      const kept = [];
+      for (const g of groups) {
+        const town = (g.report.town || '').trim();
+        if (!town) { g.unplaced = true; kept.push(g); continue; }
+        const loc = await geocodeTown(town, center.state);
+        if (!loc) { g.unplaced = true; kept.push(g); continue; }
+        g.distanceMi = haversineMi(center, loc);
+        if (g.distanceMi <= Number(s.roadRadius)) kept.push(g);
+      }
+      groups = kept;
+      if (statusEl) statusEl.textContent = 'within ' + s.roadRadius + ' mi of ' + s.roadZip + (center.place ? ' (' + center.place + ')' : '');
+    } else if (statusEl) {
+      statusEl.textContent = 'ZIP ' + s.roadZip + ' not found — showing everything';
+    }
+  } else if (statusEl) {
+    statusEl.textContent = '';
+  }
+
+  _roadGroups = groups;
+  if (!groups.length) {
+    el.innerHTML = '<span style="color:#7d8590">' + (s.roadZip && s.roadRadius ? 'No active reports within ' + s.roadRadius + ' mi. Widen the radius, or be the first to report below.' : 'No road work reported yet — be the first below.') + '</span>';
     return;
   }
-  el.innerHTML = reports.map(function(r) {
+
+  el.innerHTML = groups.map(function(g, i) {
+    const r = g.report;
     const meta = ROAD_STATUS_META[r.status] || ROAD_STATUS_META.repaving;
     const when = r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
+    // Calendar-day age, not elapsed-hours: a report from yesterday evening
+    // should read "1d ago", never "Jul 20 (today)".
+    const calDays = r.created_at ? Math.round((new Date().setHours(0,0,0,0) - new Date(r.created_at).setHours(0,0,0,0)) / 86400000) : 0;
+    const age = calDays >= 1 ? calDays + 'd ago' : 'today';
+    const metaBits = [
+      when ? when + ' (' + age + ')' : '',
+      r.reported_by ? 'by ' + escapeHTML(r.reported_by) : '',
+      g.distanceMi != null ? g.distanceMi.toFixed(0) + ' mi away' : (g.unplaced && getSettings().roadZip ? 'location unknown' : ''),
+      g.confirms ? '👍 ' + g.confirms + ' confirm' + (g.confirms === 1 ? '' : 's') : '',
+      r.note ? escapeHTML(r.note) : ''
+    ].filter(Boolean).join(' · ');
+    const staleHint = g.ageDays > ROAD_STALE_HINT_DAYS ? '<div style="font-size:11px;color:#d29922;margin-top:2px">Posted ' + g.ageDays + ' days ago — still accurate?</div>' : '';
     return '<div class="row">' +
       '<div>' +
         '<div class="row-name">' + meta.icon + ' ' + escapeHTML(r.road_name) + (r.town ? '<span style="color:#7d8590;font-weight:400"> · ' + escapeHTML(r.town) + '</span>' : '') + '</div>' +
-        '<div class="row-meta">' + [when, r.reported_by ? 'by ' + escapeHTML(r.reported_by) : '', r.note ? escapeHTML(r.note) : ''].filter(Boolean).join(' · ') + '</div>' +
+        '<div class="row-meta">' + metaBits + '</div>' + staleHint +
       '</div>' +
-      '<div class="row-right"><span style="font-size:10px;font-weight:600;color:' + meta.color + ';border:1px solid ' + meta.color + ';border-radius:4px;padding:2px 7px;white-space:nowrap">' + meta.label + '</span></div>' +
+      '<div class="row-right" style="text-align:right">' +
+        '<span style="font-size:10px;font-weight:600;color:' + meta.color + ';border:1px solid ' + meta.color + ';border-radius:4px;padding:2px 7px;white-space:nowrap">' + meta.label + '</span>' +
+        '<div style="margin-top:5px;display:flex;gap:6px;justify-content:flex-end">' +
+          '<button onclick="confirmRoadStatus(' + i + ')" title="Confirm this is still the road\'s condition" style="background:transparent;border:1px solid #30363d;border-radius:5px;color:#7d8590;cursor:pointer;font-size:10px;padding:2px 7px">👍 Confirm</button>' +
+          '<button onclick="clearRoadStatus(' + i + ')" title="Mark this road back to normal" style="background:transparent;border:1px solid #30363d;border-radius:5px;color:#7d8590;cursor:pointer;font-size:10px;padding:2px 7px">✔️ Cleared</button>' +
+        '</div>' +
+      '</div>' +
     '</div>';
   }).join('');
+}
+
+function setRoadFilter() {
+  const zip = (document.getElementById('road-filter-zip').value || '').trim();
+  const radius = document.getElementById('road-filter-radius').value;
+  const s = getSettings();
+  s.roadZip = /^\d{5}$/.test(zip) ? zip : null;
+  s.roadRadius = radius || null;
+  localStorage.setItem('ed_settings', JSON.stringify(s));
+  renderRoadReports();
+}
+
+// Post a [confirm]/[cleared] lifecycle row for a listed road. Reuses the
+// same add_road_report action (and its allowed status values) so no server
+// change is needed.
+async function postRoadLifecycle(group, tag, msgText) {
+  const r = group.report;
+  try {
+    await callEdge('add_road_report', {
+      road_name: r.road_name,
+      town: r.town || null,
+      status: r.status,
+      note: tag,
+      reported_by: athleteData ? (athleteData.firstname + ' ' + athleteData.lastname) : null,
+      athlete_id: athleteData ? athleteData.id : null
+    });
+    showToast('✅', msgText, escapeHTML(r.road_name));
+    loadRoadReports();
+  } catch(e) {
+    showToast('⚠️', 'Could not post', e && e.message ? e.message : 'Unknown error');
+  }
+}
+
+function confirmRoadStatus(i) {
+  const g = _roadGroups[i];
+  if (g) postRoadLifecycle(g, '[confirm]', 'Status confirmed');
+}
+
+function clearRoadStatus(i) {
+  const g = _roadGroups[i];
+  if (!g) return;
+  if (!confirm('Mark "' + g.report.road_name + '" as back to normal? It will disappear from the list for everyone.')) return;
+  postRoadLifecycle(g, '[cleared]', 'Marked cleared');
+}
+
+// ---- Geocoding (both APIs are free, keyless, and CORS-open) ----
+function getGeoCache() {
+  try { return JSON.parse(localStorage.getItem('ed_geo_cache') || '{}'); } catch(e) { return {}; }
+}
+function setGeoCache(key, val) {
+  try {
+    const c = getGeoCache();
+    c[key] = val;
+    localStorage.setItem('ed_geo_cache', JSON.stringify(c));
+  } catch(e) {}
+}
+
+// geocodeZip lives with the tailwind-segments code (single definition,
+// shared by that feature and the road report filter - it was duplicated
+// here once and the two definitions silently collided).
+
+async function geocodeTown(town, biasState) {
+  const key = 'town:' + town.toLowerCase();
+  const cached = getGeoCache()[key];
+  if (cached !== undefined) return cached;
+  try {
+    const resp = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(town) + '&count=5&language=en&format=json&countryCode=US');
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const results = data.results || [];
+    // Prefer the match in the same state as the ZIP - "Kings Park" exists
+    // in several states and the wrong one would silently mis-filter.
+    const best = results.find(r => biasState && r.admin1 === biasState) || results[0];
+    const val = best ? { lat: best.latitude, lon: best.longitude } : null;
+    setGeoCache(key, val);
+    return val;
+  } catch(e) { return null; }
+}
+
+function haversineMi(a, b) {
+  const R = 3958.8;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const s = Math.sin(dLat/2)**2 + Math.cos(a.lat*Math.PI/180) * Math.cos(b.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(s));
 }
 
 async function submitRoadReport() {
@@ -1613,6 +1910,99 @@ function loadWithManualToken() {
   localStorage.setItem('ed_expires', Math.floor(Date.now()/1000)+21600);
   loadAll(t);
 }
+
+// ==================== SYNC NOW ====================
+// The incremental "anything new on Strava?" pass normally only runs during
+// the initial page load - so a workout uploaded while the page sat open
+// (the WKWebView keeps it alive for days) never appeared without a full
+// reload. syncNow() is that same probe on demand: the refresh button in
+// the nav, plus an automatic run whenever the tab/app returns to the
+// foreground after 10+ minutes away.
+let _syncInFlight = false;
+let _lastSyncAt = Date.now();
+
+async function syncNow() {
+  if (_syncInFlight) return;
+  if (!athleteData || !allActivities.length) { showToast('⚠️', 'Not ready', 'Connect and load your data first.'); return; }
+  _syncInFlight = true;
+  const icon = document.getElementById('sync-now-icon');
+  if (icon) icon.style.animation = 'spin 0.8s linear infinite';
+  try {
+    const token = await getToken();
+    if (!token) { showToast('⚠️', 'Sync failed', 'Could not refresh the Strava connection.'); return; }
+    const headers = { Authorization: 'Bearer ' + token };
+
+    // Same two-pass probe as the load-time top-up in loadAll (see the
+    // comment there for why pass 1 restarts pagination instead of resuming).
+    const mostRecentCached = new Date(allActivities[0].start_date);
+    const cachedIds = new Set(allActivities.map(a => a.id));
+    const newOnes = [], updated = [];
+    let reachedCached = false;
+    for (let pass = 0; pass < 2 && !reachedCached; pass++) {
+      const perPage = pass === 0 ? 12 : 50;
+      const maxPages = pass === 0 ? 1 : 10;
+      newOnes.length = 0; updated.length = 0;
+      for (let page = 1; page <= maxPages && !reachedCached; page++) {
+        const batch = await fetch(`https://www.strava.com/api/v3/athlete/activities?per_page=${perPage}&page=${page}`, {headers}).then(r=>r.json()).catch(()=>[]);
+        if (!Array.isArray(batch) || batch.length === 0) { reachedCached = true; break; }
+        batch.forEach(a => {
+          if (new Date(a.start_date) <= mostRecentCached) {
+            reachedCached = true;
+            if (cachedIds.has(a.id)) updated.push(a);
+          } else if (!cachedIds.has(a.id)) {
+            newOnes.push(a);
+          }
+        });
+      }
+    }
+
+    if (updated.length) {
+      const byId = new Map(updated.map(a => [a.id, a]));
+      allActivities = allActivities.map(a => byId.get(a.id) || a);
+    }
+    if (newOnes.length) allActivities = [...newOnes, ...allActivities];
+    const toSync = [...newOnes, ...updated];
+    if (toSync.length) {
+      syncActivitiesToSupabase(toSync, athleteData.id);
+      saveActivityGeometryCache(athleteData.id, toSync, true);
+    }
+
+    if (newOnes.length || updated.length) {
+      // Mirror the render sequence the initial load runs, so the new
+      // activity shows up everywhere at once regardless of open section.
+      renderDashboard();
+      renderPerformance();
+      renderActivities();
+      renderGear();
+      renderCollaborators(collabFilter || 'all');
+    }
+
+    if (newOnes.length) {
+      const a = newOnes[0];
+      const mi = (a.distance / 1609.34).toFixed(1);
+      showToast('✅', newOnes.length === 1 ? 'Synced 1 new activity' : 'Synced ' + newOnes.length + ' new activities',
+        escapeHTML(a.name || a.type) + ' — ' + mi + ' mi');
+    } else {
+      showToast('✔️', 'Up to date', updated.length ? 'No new activities; refreshed details on ' + updated.length + ' recent one' + (updated.length === 1 ? '' : 's') + '.' : 'Nothing new on Strava yet. If the workout just finished, give Strava a minute to process it.');
+    }
+    _lastSyncAt = Date.now();
+  } catch (e) {
+    showToast('⚠️', 'Sync failed', e && e.message ? e.message : 'Unknown error');
+  } finally {
+    _syncInFlight = false;
+    if (icon) icon.style.animation = '';
+  }
+}
+
+// Auto top-up on return to foreground: the exact "6AM run" scenario - the
+// app was open since yesterday, the run hit Strava this morning, and
+// nothing ever re-checked. 10-minute guard keeps quick tab switches free.
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && athleteData && allActivities.length &&
+      Date.now() - _lastSyncAt > 10 * 60 * 1000) {
+    syncNow();
+  }
+});
 
 // MAIN LOAD
 async function loadAll(token) {
@@ -1827,6 +2217,8 @@ async function loadAll(token) {
   // lets the stylesheet's normal cascade (flex on desktop, none on mobile)
   // apply correctly based on actual viewport width.
   document.getElementById('nav-links').style.removeProperty('display');
+  const syncBtn = document.getElementById('sync-now-btn');
+  if (syncBtn) syncBtn.style.removeProperty('display');
   showSection('dashboard');
 
   renderDashboard();
@@ -2303,12 +2695,10 @@ function activityLocalDateKey(activity) {
   return (activity.start_date_local || activity.start_date).split('T')[0];
 }
 
-// The in-page top nav is hidden entirely inside the native iOS app - a real
-// native SwiftUI bar shows the logo/slogan/settings instead, since WKWebView
-// kept letting page content scroll over position:fixed elements no matter
-// how that was hardened in CSS. This just tells the native bar who's
-// connected; see WebView.swift's WKScriptMessageHandler for the other side.
-function notifyNativeAuthState(name) {
+// Generic JS -> native bridge. Silently a no-op outside the iOS app, so
+// callers never need to check the environment; see WebView.swift's
+// WKScriptMessageHandler for the other side.
+function notifyNative(message) {
   try {
     const handlers = window.webkit && window.webkit.messageHandlers;
     if (!handlers) return;
@@ -2316,8 +2706,38 @@ function notifyNativeAuthState(name) {
     // fallback so a newly-pushed page still works against an app build that
     // predates the rename.
     const channel = handlers.palmaresNative || handlers.eldoradoNative;
-    if (channel) channel.postMessage({ type: 'auth', name: name || null });
+    if (channel) channel.postMessage(message);
   } catch (e) {}
+}
+
+// The in-page top nav is hidden entirely inside the native iOS app - a real
+// native SwiftUI bar shows the logo/slogan/settings instead, since WKWebView
+// kept letting page content scroll over position:fixed elements no matter
+// how that was hardened in CSS. This just tells the native bar who's
+// connected.
+function notifyNativeAuthState(name) {
+  notifyNative({ type: 'auth', name: name || null });
+}
+
+// ==================== HOME SCREEN WIDGET FEED ====================
+// The page is the only place fitness metrics, weather, and events are ever
+// computed, so it feeds the iOS home screen widget rather than the widget
+// re-deriving anything. Each producer below patches its slice of the
+// snapshot as it renders; the debounced push sends the whole snapshot over
+// the bridge, where WidgetBridge.swift persists it to the App Group and
+// asks WidgetKit to reload timelines. Harmless no-op in a normal browser.
+const _widgetSnapshot = {};
+let _widgetPushTimer = null;
+function updateWidgetData(patch) {
+  Object.assign(_widgetSnapshot, patch);
+  clearTimeout(_widgetPushTimer);
+  _widgetPushTimer = setTimeout(function() {
+    notifyNative({
+      type: 'widgetData',
+      updatedAt: new Date().toISOString(),
+      data: _widgetSnapshot
+    });
+  }, 400);
 }
 
 // ==================== NOTIFICATIONS ====================
@@ -2533,6 +2953,17 @@ function renderDashboard() {
   document.getElementById('week-mi').textContent = Math.round(weekMi)+' mi';
   document.getElementById('week-acts').textContent = weekActs.length+' activit'+(weekActs.length!==1?'ies':'y');
 
+  // Feed the iOS home screen widget. formLabel mirrors the TSB coloring above.
+  updateWidgetData({
+    fitness: {
+      ctl: metrics.ctl, atl: metrics.atl, tsb: metrics.tsb,
+      formLabel: metrics.tsb > 5 ? 'Fresh' : metrics.tsb > -10 ? 'Neutral' : metrics.tsb > -30 ? 'Tired' : 'Very fatigued',
+      ctlWeekDelta: diff
+    },
+    week: { miles: Math.round(weekMi), activities: weekActs.length },
+    streaks: { daily: calcDailyStreak(), weekly: calcWeeklyStreak() }
+  });
+
   // The fitness/form charts and the recent-activities list moved off Today
   // in the cockpit restructure: the charts render when Train is opened
   // (Chart.js sizes to 0 in a hidden section, so rendering them here while
@@ -2560,6 +2991,17 @@ function renderTodayCards() {
       const wind = msToMph(d.windspeed_10m_max[0]);
       const dir = windDirName(d.winddirection_10m_dominant[0]);
       const windColor = wind > 20 ? '#f85149' : wind > 12 ? '#d29922' : '#3fb950';
+      updateWidgetData({
+        weather: {
+          tempHi: Math.round(d.temperature_2m_max[0]),
+          tempLo: Math.round(d.temperature_2m_min[0]),
+          desc: wxDesc(d.weathercode[0]),
+          icon: wxIcon(d.weathercode[0]),
+          windMph: wind,
+          windDir: dir,
+          source: data._source === 'weatherkit' ? 'Apple Weather' : 'Open-Meteo'
+        }
+      });
       wxEl.innerHTML =
         '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">' +
           '<span style="font-size:30px">' + wxIcon(d.weathercode[0]) + '</span>' +
@@ -2578,9 +3020,18 @@ function renderTodayCards() {
     computeTailwindSegments(0).then(function(top) {
       if (!top.length) {
         oppEl.innerHTML = 'No tailwind segments found nearby today — check the full list under <a href="#" onclick="showSection(\'segments\');return false" style="color:#C9A227">Segments</a>.';
+        updateWidgetData({ tailwind: null });
         return;
       }
       const s = top[0];
+      updateWidgetData({
+        tailwind: {
+          name: s.segment_name || 'Segment',
+          mph: Math.round(s.component),
+          rank: s.rank != null ? s.rank : null,
+          distanceMi: s.distanceMi != null ? +s.distanceMi.toFixed(2) : null
+        }
+      });
       const label = s.component >= 0 ? ('Tailwind ' + Math.round(s.component) + ' mph') : ('Headwind ' + Math.abs(Math.round(s.component)) + ' mph');
       const color = s.component >= 10 ? '#3fb950' : s.component >= 0 ? '#d29922' : '#f85149';
       const rankBadge = s.rank === 1 ? '<span class="badge b-gold" style="margin-right:6px">#1</span>'
@@ -2978,6 +3429,31 @@ function renderCoaching(metrics, allActs) {
       }
     }
   } catch(e) { /* VO2 helper not available, skip silently */ }
+
+  // ---- Recovery signals (Apple Health, via HealthMetricsReader.swift) ----
+  // Morning-of physiology beats yesterday's training math, so these go to
+  // the TOP of the coaching list. Only present inside the iOS app; the web
+  // version simply never receives the fields and skips this block.
+  const recovery = [];
+  const hk = healthKitData || {};
+  if (hk.hrv7day && hk.hrv30day) {
+    const ratio = hk.hrv7day / hk.hrv30day;
+    const pct = Math.round(Math.abs(1 - ratio) * 100);
+    if (ratio < 0.85) {
+      recovery.push({title:`HRV suppressed ${pct}% below your baseline`, text:`7-day HRV (${Math.round(hk.hrv7day)} ms) is well under your 30-day average (${Math.round(hk.hrv30day)} ms). The nervous system is under strain - a hard workout today likely digs the hole deeper. Favor Z1-Z2 regardless of how the legs feel.`});
+    } else if (ratio > 1.05 && tsb > 0) {
+      recovery.push({title:'HRV above baseline + positive form', text:`7-day HRV (${Math.round(hk.hrv7day)} ms) is running ${pct}% above your 30-day average and Form is +${tsb}. This is as primed as it gets - a genuinely good day to target something.`});
+    }
+  }
+  if (hk.sleepHours != null) {
+    const slept = Math.round(hk.sleepHours * 10) / 10;
+    if (slept < 6) {
+      recovery.push({title:`${slept}h sleep last night`, text:'Short sleep blunts power output and raises perceived effort before you turn a pedal. Keep today aerobic and reassess tomorrow rather than forcing planned intensity.'});
+    } else if (slept >= 8 && tsb > 5) {
+      recovery.push({title:`${slept}h sleep + fresh legs`, text:'Well rested on positive form. If there was a day to chase a segment, this is it.'});
+    }
+  }
+  items = recovery.concat(items);
 
   area.innerHTML = items.map(i=>`<div class="coach-item"><div class="coach-title">${i.title}</div><div class="coach-text">${i.text}</div></div>`).join('');
 }
@@ -4601,6 +5077,13 @@ function calcFitnessAge(vo2max) {
 // HRV / date of birth from Apple Health and calls window.receiveHealthData
 // with them (re-sent after every page load). In a normal browser this stays
 // null and everything falls back to Settings values and formula estimates.
+//
+// ios/HealthMetricsReader.swift extends the payload with recovery fields:
+//   sleepHours  - last night's asleep time (hours, e.g. 7.4)
+//   hrv7day     - mean SDNN over the trailing 7 days (ms)
+//   hrv30day    - mean SDNN over the trailing 30 days (ms), the baseline
+// renderCoaching turns these into morning-of recovery guidance; every field
+// is optional, so an older app build that doesn't send them changes nothing.
 let healthKitData = null;
 try { healthKitData = JSON.parse(localStorage.getItem('ed_healthkit') || 'null'); } catch(e) {}
 
@@ -4610,6 +5093,8 @@ window.receiveHealthData = function(data) {
   try { localStorage.setItem('ed_healthkit', JSON.stringify(data)); } catch(e) {}
   renderTrueAge();
   renderVO2Max();
+  // Recovery fields feed the coaching card on Today, so refresh it too.
+  try { if (allActivities.length) renderCoaching(computeMetrics(allActivities), allActivities); } catch(e) {}
 };
 
 // Best available VO2 max, in priority order: Apple Health measurement
@@ -4908,6 +5393,119 @@ function showToast(icon, title, body, duration) {
   setTimeout(function() { t.classList.remove('show'); }, duration);
 }
 
+// ==================== EXTERNAL RIDE CALENDARS ====================
+// User-added websites with ride calendars (Settings > Group events), e.g.
+// the SBRA upcoming-rides page. Browsers can't fetch these directly - none
+// of them send CORS headers - so the request goes through the Edge
+// Function's fetch_url action (docs/edge-fetch-url.md). Until that action
+// is deployed, sources are still listed as outbound links under the events
+// card and a one-line note explains the situation; nothing breaks.
+let extCalNeedsServer = false;
+
+function extCalSources() {
+  return (getSettings().extCalendars || []).filter(s => s && s.url);
+}
+
+// Minimal ICS parser: DTSTART + SUMMARY per VEVENT is all the events card
+// needs. Handles the two DTSTART shapes that cover real-world feeds:
+// 20260722T083000(Z) and date-only 20260722.
+function parseICSCalendar(text, src) {
+  const events = [];
+  const blocks = text.split('BEGIN:VEVENT').slice(1);
+  for (const block of blocks) {
+    const dtMatch = block.match(/DTSTART[^:;]*(?:;[^:]*)?:(\d{8})(?:T(\d{6}))?(Z?)/);
+    const sumMatch = block.match(/SUMMARY[^:]*:(.+)/);
+    if (!dtMatch) continue;
+    const [, ymd, hms, z] = dtMatch;
+    const iso = ymd.slice(0,4) + '-' + ymd.slice(4,6) + '-' + ymd.slice(6,8) +
+      (hms ? 'T' + hms.slice(0,2) + ':' + hms.slice(2,4) + ':' + hms.slice(4,6) + (z || '') : 'T09:00:00');
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) continue;
+    events.push({
+      title: (sumMatch ? sumMatch[1].trim().replace(/\\,/g, ',') : 'Event'),
+      club_name: src.label || calendarHostname(src.url),
+      nextDate: d, external: true, url: src.url,
+      upcoming_occurrences: [d.toISOString()]
+    });
+  }
+  return events;
+}
+
+// Best-effort HTML parser: strip tags, then treat every "MM/DD/YYYY - H:MMam"
+// (time optional) as an event whose title is the text that follows it, up to
+// the next date or a length cap. Tuned to the SBRA/Drupal ride listing but
+// deliberately generic - most club sites that publish a plain-text-ish ride
+// list come through recognizably.
+function parseRideListHTML(html, src) {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#039;|&apos;/g, "'").replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ');
+  const dateRe = /(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm))?/gi;
+  const hits = [];
+  let m;
+  while ((m = dateRe.exec(text)) !== null) hits.push({ m, index: m.index, end: dateRe.lastIndex });
+  const events = [];
+  for (let i = 0; i < hits.length; i++) {
+    const { m: h, end } = hits[i];
+    let hour = h[4] ? parseInt(h[4]) : 9, min = h[5] ? parseInt(h[5]) : 0;
+    if (h[6] && h[6].toLowerCase() === 'pm' && hour !== 12) hour += 12;
+    if (h[6] && h[6].toLowerCase() === 'am' && hour === 12) hour = 0;
+    const d = new Date(parseInt(h[3]), parseInt(h[1]) - 1, parseInt(h[2]), hour, min);
+    if (isNaN(d.getTime())) continue;
+    const until = i + 1 < hits.length ? hits[i + 1].index : Math.min(text.length, end + 90);
+    let title = text.slice(end, until).trim()
+      .replace(/^[,\s-]+/, '')
+      // drop the SBRA status/leader tail ("a go Dan Rostrup ...") when present
+      .replace(/\s+a go\s.+$/i, '').replace(/\s+(delayed|changed|canceled)\s.+$/i, ' ($1)')
+      .slice(0, 80).trim();
+    if (!title) title = 'Ride';
+    events.push({
+      title, club_name: src.label || calendarHostname(src.url),
+      nextDate: d, external: true, url: src.url,
+      upcoming_occurrences: [d.toISOString()]
+    });
+  }
+  return events;
+}
+
+function calendarHostname(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch(e) { return 'External calendar'; }
+}
+
+// Fetch + parse one source, with a 6-hour localStorage cache so the Edge
+// Function (and the club site) isn't hit on every dashboard render.
+async function fetchExternalCalendar(src) {
+  const cacheKey = 'ed_extcal:' + src.url;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    if (c && Date.now() - c.at < 6 * 3600 * 1000) {
+      return c.events.map(e => Object.assign({}, e, { nextDate: new Date(e.nextDate) }));
+    }
+  } catch(e) {}
+  const res = await callEdge('fetch_url', { url: src.url });
+  const body = res.body || res.content || '';
+  const events = /BEGIN:VCALENDAR/.test(body) ? parseICSCalendar(body, src) : parseRideListHTML(body, src);
+  try { localStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), events })); } catch(e) {}
+  return events;
+}
+
+async function loadExternalCalendarEvents() {
+  extCalNeedsServer = false;
+  const sources = extCalSources();
+  if (!sources.length) return [];
+  const results = await Promise.all(sources.map(src =>
+    fetchExternalCalendar(src).catch(e => {
+      if (/unknown action/i.test(e && e.message || '')) extCalNeedsServer = true;
+      else console.log('External calendar "' + (src.label || src.url) + '" failed:', e.message);
+      return [];
+    })
+  ));
+  return results.flat();
+}
+
 // ==================== CLUB EVENTS ====================
 let eventsLoaded = false;
 
@@ -4922,7 +5520,11 @@ async function loadClubEvents() {
     // Check cache first - club lists and their events change slowly enough
     // that a 2-hour cache meaningfully cuts Strava calls without showing
     // visibly stale data (new events posted today would show up within 2h).
-    const cacheKey = 'club_events';
+    // The user's excluded-club set is part of the key so flipping a toggle
+    // in Settings takes effect immediately instead of after cache expiry.
+    const sEvents = getSettings();
+    const excludedClubs = new Set((sEvents.eventClubExcluded || []).map(String));
+    const cacheKey = 'club_events' + (excludedClubs.size ? ':x' + [...excludedClubs].sort().join(',') : '');
     const athleteId = athleteData ? athleteData.id : null;
     const cached = await getCached(athleteId, cacheKey, 2*60*60*1000);
     let allEvents, anyClubFailed = false;
@@ -4948,11 +5550,21 @@ async function loadClubEvents() {
         return;
       }
 
+      // Remember every club so Settings can render include/exclude toggles
+      // even before the user has ever opened that page, then drop the ones
+      // the user unchecked there.
+      try {
+        const sKnown = getSettings();
+        sKnown.knownClubs = clubs.map(c => ({ id: c.id, name: c.name }));
+        localStorage.setItem('ed_settings', JSON.stringify(sKnown));
+      } catch(e) {}
+      const syncedClubs = clubs.filter(c => !excludedClubs.has(String(c.id)));
+
       // Fetch events for each club
       allEvents = [];
       console.log('=== Club events debug ===');
-      console.log('Total clubs found:', clubs.length, '| Names:', clubs.map(c => c.name).join(', '));
-      for (const club of clubs.slice(0, 8)) {
+      console.log('Total clubs found:', clubs.length, '| Syncing:', syncedClubs.map(c => c.name).join(', ') || '(none)');
+      for (const club of syncedClubs.slice(0, 8)) {
         try {
           const evResp = await fetch('https://www.strava.com/api/v3/clubs/'+club.id+'/group_events', {headers});
           if (!evResp.ok) {
@@ -5011,7 +5623,10 @@ async function loadClubEvents() {
     // of the week the moment that week's instance passed). The in-week
     // preference below now only decides which DATE is displayed - never
     // whether the event appears at all.
-    const upcoming = allUpcoming;
+    // External calendar sources (Settings > Group events) merge in here,
+    // filtered to future dates just like the Strava events.
+    const externalEvents = (await loadExternalCalendarEvents()).filter(e => e.nextDate >= now);
+    const upcoming = allUpcoming.concat(externalEvents);
 
     // For display purposes, if a LiVelo/WolfPack event has an occurrence later
     // this week, prefer that date over a far-future one. The candidate must
@@ -5033,6 +5648,14 @@ async function loadClubEvents() {
     upcoming.sort((a,b) => a.nextDate - b.nextDate);
 
     document.getElementById('events-count').textContent = upcoming.length + ' upcoming';
+
+    updateWidgetData({
+      nextEvent: upcoming.length ? {
+        title: upcoming[0].title || 'Club event',
+        club: upcoming[0].club_name || null,
+        date: upcoming[0].nextDate.toISOString()
+      } : null
+    });
 
     if (!upcoming.length) {
       // Say WHY it's empty. "No events" is indistinguishable from a silent
@@ -5067,7 +5690,7 @@ async function loadClubEvents() {
         <div>
           <div class="row-name" style="display:flex;align-items:center;gap:6px">
             <span style="font-size:10px;background:${typeColor}22;color:${typeColor};border:1px solid ${typeColor};border-radius:4px;padding:1px 6px;font-weight:600">${typeLabel}</span>
-            <a href="${stravaClubHref(e)}" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none" title="Opens this club's main page on Strava - exact event links aren't reliably constructable from the API, and /group_events sub-paths 404 on Strava's current site">${escapeHTML(e.title || 'Untitled event')}</a>
+            <a href="${e.external ? escapeHTML(e.url) : stravaClubHref(e)}" target="_blank" rel="noopener noreferrer" style="color:#e6edf3;text-decoration:none" title="${e.external ? 'Opens the source calendar site' : 'Opens this club\'s main page on Strava - exact event links aren\'t reliably constructable from the API, and /group_events sub-paths 404 on Strava\'s current site'}">${escapeHTML(e.title || 'Untitled event')}</a>
           </div>
           <div class="row-meta">${dateStr} at ${timeStr} &middot; ${escapeHTML(e.club_name || 'Club')}</div>
           ${desc ? `<div style="font-size:11px;color:#444d56;margin-top:2px">${escapeHTML(descShort)}${desc.length>80?'...':''}</div>` : ''}
@@ -5079,13 +5702,26 @@ async function loadClubEvents() {
       </div>`;
     }).join('');
 
-    // SBRA A-rides link
+    // Footer: outbound links to the configured external calendar sites (or
+    // the historical SBRA link when none are configured yet), plus a note
+    // when sources exist but the server's fetch_url action isn't deployed.
     const evList = document.getElementById('events-list');
     if (evList) {
-      const sbra = document.createElement('div');
-      sbra.style.cssText = 'padding:10px 0;border-top:1px solid #21262d;margin-top:8px';
-      sbra.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500;color:#e6edf3">SBRA A-rides</div><div style="font-size:11px;color:#7d8590">Suffolk Bicycle Riders Association upcoming rides</div></div><a href="https://www.sbraweb.org/upcoming_rides?q=upcoming_rides_a" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#FC4C02;text-decoration:none;border:1px solid #FC4C02;border-radius:6px;padding:4px 10px">View rides</a></div>';
-      evList.appendChild(sbra);
+      const sources = extCalSources();
+      const footer = document.createElement('div');
+      footer.style.cssText = 'padding:10px 0;border-top:1px solid #21262d;margin-top:8px';
+      const linkBtn = (href, text) => '<a href="' + escapeHTML(href) + '" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#FC4C02;text-decoration:none;border:1px solid #FC4C02;border-radius:6px;padding:4px 10px;white-space:nowrap">' + escapeHTML(text) + '</a>';
+      if (sources.length) {
+        footer.innerHTML = sources.map(src =>
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0">' +
+            '<div style="font-size:12px;color:#7d8590">' + escapeHTML(src.label || calendarHostname(src.url)) + '</div>' +
+            linkBtn(src.url, 'View site') +
+          '</div>').join('') +
+          (extCalNeedsServer ? '<div style="font-size:11px;color:#d29922;margin-top:6px">Inline events from these calendars need a one-time server update (docs/edge-fetch-url.md) — until then use the links.</div>' : '');
+      } else {
+        footer.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500;color:#e6edf3">SBRA A-rides</div><div style="font-size:11px;color:#7d8590">Suffolk Bicycle Riders Association upcoming rides — add this or any club calendar under Settings › Group events</div></div>' + linkBtn('https://www.sbraweb.org/upcoming_rides?q=upcoming_rides_a', 'View rides') + '</div>';
+      }
+      evList.appendChild(footer);
     }
 
   } catch(e) {
@@ -7576,15 +8212,26 @@ let currentWxDayIdx = 0;
 let tailwindCenter = { lat: 40.7298, lng: -73.2097, zip: '11787' }; // 11787 (Islip, NY)
 let tailwindZipDebounce = null;
 
+// Single ZIP geocoder for both the tailwind center and the road report
+// filter. Returns lat plus BOTH lng and lon spellings (the two callers
+// grew up with different conventions), and state/place for display and
+// town disambiguation. Cached in ed_geo_cache; a null cache entry means a
+// known-bad ZIP and is not refetched.
 async function geocodeZip(zip) {
+  const key = 'zip:' + zip;
+  const cached = getGeoCache()[key];
+  if (cached !== undefined) return cached;
   try {
     const res = await fetch('https://api.zippopotam.us/us/' + encodeURIComponent(zip));
-    if (!res.ok) return null;
+    if (!res.ok) { setGeoCache(key, null); return null; }
     const data = await res.json();
     const place = data.places && data.places[0];
-    if (!place) return null;
-    return { lat: parseFloat(place.latitude), lng: parseFloat(place.longitude) };
-  } catch (e) { return null; }
+    if (!place) { setGeoCache(key, null); return null; }
+    const lat = parseFloat(place.latitude), lon = parseFloat(place.longitude);
+    const val = { lat: lat, lng: lon, lon: lon, state: place.state, place: place['place name'] };
+    setGeoCache(key, val);
+    return val;
+  } catch (e) { return null; } // network error: don't cache, retry next time
 }
 
 function onTailwindZipInput() {
