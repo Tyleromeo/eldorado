@@ -266,7 +266,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
 /* MAP */
 .map-shell { position: relative; }
-#eldorado-map { height: 72vh; min-height: 520px; border-radius: 12px; overflow: hidden; background: #0d1117; border: 1px solid #30363d; }
+#palmares-map { height: 72vh; min-height: 520px; border-radius: 12px; overflow: hidden; background: #0d1117; border: 1px solid #30363d; }
 .map-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
 .segment-distance-filter { background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:10px 12px; margin:-2px 0 12px; }
 .segment-distance-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
@@ -294,7 +294,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .route-segment-badge { display:inline-block; font-size:10px; font-weight:700; border-radius:4px; padding:1px 5px; margin-left:4px; }
 .route-seg-kom { background:#2d2000; color:#C9A227; border:1px solid #C9A227; }
 .route-seg-top10 { background:#1a2d3a; color:#58a6ff; border:1px solid #388bfd; }
-@media(max-width:720px){ #eldorado-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
+@media(max-width:720px){ #palmares-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
 
 /* ROUTES / GPX */
 .route-drop { border:2px dashed #30363d; border-radius:12px; padding:2.5rem; text-align:center; cursor:pointer; transition:border-color 0.2s; }
@@ -857,19 +857,19 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <span id="map-counts" style="font-size:12px;color:#7d8590"></span>
     </div>
     <div class="map-toolbar">
-      <button class="map-toggle active" id="map-toggle-koms" onclick="toggleEldoradoMapLayer('koms')">KOMs / CRs</button>
-      <button class="map-toggle active" id="map-toggle-top10s" onclick="toggleEldoradoMapLayer('top10s')">Top 10s</button>
-      <button class="map-toggle active" id="map-toggle-bike" onclick="toggleEldoradoMapLayer('bike')">Bike</button>
-      <button class="map-toggle active" id="map-toggle-run" onclick="toggleEldoradoMapLayer('run')">Run</button>
-      <button class="map-toggle active" id="map-toggle-wind-today" onclick="setEldoradoMapWind('today')">Wind Today</button>
-      <button class="map-toggle" id="map-toggle-wind-tomorrow" onclick="setEldoradoMapWind('tomorrow')">Wind Tomorrow</button>
-      <button class="map-toggle" id="map-toggle-heat" onclick="toggleEldoradoMapLayer('heat')">Heatmap</button>
+      <button class="map-toggle active" id="map-toggle-koms" onclick="togglePalmaresMapLayer('koms')">KOMs / CRs</button>
+      <button class="map-toggle active" id="map-toggle-top10s" onclick="togglePalmaresMapLayer('top10s')">Top 10s</button>
+      <button class="map-toggle active" id="map-toggle-bike" onclick="togglePalmaresMapLayer('bike')">Bike</button>
+      <button class="map-toggle active" id="map-toggle-run" onclick="togglePalmaresMapLayer('run')">Run</button>
+      <button class="map-toggle active" id="map-toggle-wind-today" onclick="setPalmaresMapWind('today')">Wind Today</button>
+      <button class="map-toggle" id="map-toggle-wind-tomorrow" onclick="setPalmaresMapWind('tomorrow')">Wind Tomorrow</button>
+      <button class="map-toggle" id="map-toggle-heat" onclick="togglePalmaresMapLayer('heat')">Heatmap</button>
       <button class="map-toggle" id="map-toggle-route" onclick="toggleRouteBuilder()" style="border-color:#e0691a">Route builder</button>
     </div>
     <div class="segment-distance-filter">
       <div class="segment-distance-row">
         <div class="segment-distance-title">Segment length</div>
-        <input id="map-segment-distance" class="segment-distance-range" type="range" min="0" max="9" step="1" value="0" oninput="setEldoradoMapDistanceFilter(this.value)" />
+        <input id="map-segment-distance" class="segment-distance-range" type="range" min="0" max="9" step="1" value="0" oninput="setPalmaresMapDistanceFilter(this.value)" />
         <div class="segment-distance-label" id="map-segment-distance-label">All lengths</div>
       </div>
       <div class="segment-distance-ticks">
@@ -909,7 +909,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
         <div id="saved-routes-list"><div style="font-size:11px;color:#7d8590">Saved routes will appear here.</div></div>
       </div>
     </div>
-    <div class="map-shell"><div id="eldorado-map"></div></div>
+    <div class="map-shell"><div id="palmares-map"></div></div>
     <div class="map-legend">
       <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Tailwind 10+ mph</div>
       <div class="map-legend-item"><span class="map-swatch" style="background:#d29922"></span>Tailwind 0-9 mph</div>
@@ -1055,11 +1055,11 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Mapbox public token</div><div class="setting-sub">Optional for local testing. For the live site, use a URL-restricted public token.</div></div>
-        <input class="setting-input" id="set-mapbox-token" type="password" placeholder="pk..." onchange="saveSettings(); resetEldoradoMapTiles();" style="width:260px;text-align:left" />
+        <input class="setting-input" id="set-mapbox-token" type="password" placeholder="pk..." onchange="saveSettings(); resetPalmaresMapTiles();" style="width:260px;text-align:left" />
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Map style</div><div class="setting-sub">Uses Mapbox tiles inside Leaflet.</div></div>
-        <select class="form-select" id="set-map-style" onchange="saveSettings(); resetEldoradoMapTiles();" style="width:160px">
+        <select class="form-select" id="set-map-style" onchange="saveSettings(); resetPalmaresMapTiles();" style="width:160px">
           <option value="outdoors-v12" selected>Outdoors</option>
           <option value="streets-v12">Streets</option>
           <option value="satellite-streets-v12">Satellite</option>
@@ -1415,7 +1415,7 @@ function showSection(name) {
   // tailwind list, so any of those entry points warms it.
   if ((name === 'dashboard' || name === 'map' || name === 'segments') && !weatherLoaded) { weatherLoaded = true; loadWeather(); }
   if (name === 'map' && !roadReportsLoaded) { roadReportsLoaded = true; loadRoadReports(); }
-  if (name === 'map') { setTimeout(function(){ try { initEldoradoMap(); renderEldoradoMap(); renderTailwindSegments(currentWxDayIdx); applyCollapseState(); } catch(e) { console.error('renderMap:', e); } }, 80); }
+  if (name === 'map') { setTimeout(function(){ try { initPalmaresMap(); renderPalmaresMap(); renderTailwindSegments(currentWxDayIdx); applyCollapseState(); } catch(e) { console.error('renderMap:', e); } }, 80); }
   if (name === 'settings') { try { loadSettingsUI(); } catch(e) { console.error('loadSettingsUI:', e); } }
   if (name === 'activities' && allActivities.length) { try { renderActivities(); renderHeatmap(); renderCollaborators(collabFilter||'all'); renderGear(); renderStreaks(); applyCollapseState(); } catch(e) { console.error('renderActivities:', e); } }
   if (name === 'segments' && allActivities.length) { try { renderKomScanUI(); applyCollapseState(); } catch(e) { console.error('renderKomScanUI:', e); } }
@@ -2689,7 +2689,7 @@ async function renderLastActivityHighlight() {
 }
 
 // Small standalone Leaflet map for the highlight card's route preview - a
-// separate map instance from the main Map page's eldoradoMap, so it doesn't
+// separate map instance from the main Map page's palmaresMap, so it doesn't
 // interfere with that page's state (layers, bounds-fit-once flag, etc).
 // The polyline comes straight off the activity object (backfilled from the
 // activity-geometry cache during loadAll if it wasn't already present from
@@ -4971,15 +4971,28 @@ async function loadClubEvents() {
         } catch(e) { console.log('Club "'+club.name+'" (id '+club.id+'): EXCEPTION', e.message); anyClubFailed = true; }
       }
 
-      if (athleteId && !anyClubFailed) setCached(athleteId, cacheKey, allEvents);
+      // Never cache an empty result: a single bad/rate-limited fetch would
+      // otherwise pin "no events" in place for two hours even after Strava
+      // recovered.
+      if (athleteId && !anyClubFailed && allEvents.length) setCached(athleteId, cacheKey, allEvents);
     }
 
-    // Sort by upcoming date
+    // Sort by upcoming date, using the first occurrence that is genuinely in
+    // the future rather than blindly trusting upcoming_occurrences[0].
+    // Strava's array frequently leads with an instance that has already
+    // started or passed, and taking [0] then filtering on ">= now" dropped
+    // the ENTIRE recurring series - a weekly club ride would disappear
+    // completely because its stale first entry pointed at last week.
     const now = new Date();
     const allUpcoming = allEvents
-      .filter(e => e.upcoming_occurrences && e.upcoming_occurrences.length > 0)
-      .map(e => ({...e, nextDate: new Date(e.upcoming_occurrences[0])}))
-      .filter(e => e.nextDate >= now)
+      .map(e => {
+        const future = (e.upcoming_occurrences || [])
+          .map(d => new Date(d))
+          .filter(d => !isNaN(d.getTime()) && d >= now)
+          .sort((a, b) => a - b);
+        return future.length ? Object.assign({}, e, { nextDate: future[0] }) : null;
+      })
+      .filter(Boolean)
       .sort((a,b) => a.nextDate - b.nextDate);
 
     // Current week boundary (Monday-Sunday) for the Livelo/WolfPack week filter
@@ -4991,36 +5004,29 @@ async function loadClubEvents() {
       return haystack.includes(needle);
     };
 
-    const upcoming = allUpcoming.filter(e => {
-      // SBRA A rides: always shown, regardless of date
-      const isSbraA = matchesText(e, 'sbra') && /\ba\b/i.test(e.title || '');
-      if (isSbraA) return true;
+    // Every upcoming event is shown. LiVelo/WolfPack rides used to be hidden
+    // unless an occurrence landed inside the current Mon-Sun week, which
+    // silently suppressed exactly what this card exists for: a recurring
+    // weekly club ride (the LiVelo Wednesday night ride vanished for the rest
+    // of the week the moment that week's instance passed). The in-week
+    // preference below now only decides which DATE is displayed - never
+    // whether the event appears at all.
+    const upcoming = allUpcoming;
 
-      // Livelo and WolfPack rides: only shown if they fall in the current week.
-      // Check ALL upcoming occurrences, not just the first one, since a
-      // recurring event's nearest occurrence isn't always the in-week one
-      // (e.g. if today's instance already started, the "next" occurrence on
-      // record might already point past this week even though an in-week
-      // instance still technically exists).
-      const isLivelo = matchesText(e, 'livelo');
-      const isWolfpack = matchesText(e, 'wolfpack') || matchesText(e, 'wolf pack');
-      if (isLivelo || isWolfpack) {
-        const occurrences = (e.upcoming_occurrences || []).map(d => new Date(d));
-        return occurrences.some(d => d >= weekStart && d < weekEnd);
-      }
-
-      // Everything else: keep the normal "any upcoming" behavior
-      return true;
-    });
-
-    // For display purposes, if an event matched via an in-week occurrence
-    // that wasn't the first one, swap nextDate to that in-week occurrence so
-    // the card shows the relevant date/time rather than a far-future one.
+    // For display purposes, if a LiVelo/WolfPack event has an occurrence later
+    // this week, prefer that date over a far-future one. The candidate must
+    // still be in the future: weekStart is Monday 00:00, so matching on the
+    // week alone would happily pick an occurrence that already happened (on a
+    // Tuesday, a Monday instance) and overwrite the correct next date with a
+    // stale one - the exact symptom the nextDate logic above exists to avoid.
     upcoming.forEach(e => {
       const isLivelo = matchesText(e, 'livelo');
       const isWolfpack = matchesText(e, 'wolfpack') || matchesText(e, 'wolf pack');
       if (isLivelo || isWolfpack) {
-        const inWeek = (e.upcoming_occurrences || []).map(d => new Date(d)).find(d => d >= weekStart && d < weekEnd);
+        const inWeek = (e.upcoming_occurrences || [])
+          .map(d => new Date(d))
+          .filter(d => !isNaN(d.getTime()) && d >= now && d >= weekStart && d < weekEnd)
+          .sort((a, b) => a - b)[0];
         if (inWeek) e.nextDate = inWeek;
       }
     });
@@ -5029,9 +5035,15 @@ async function loadClubEvents() {
     document.getElementById('events-count').textContent = upcoming.length + ' upcoming';
 
     if (!upcoming.length) {
+      // Say WHY it's empty. "No events" is indistinguishable from a silent
+      // API/scope failure, which is what made the missing weekly club ride
+      // so hard to pin down.
+      const withOccurrences = allEvents.filter(e => (e.upcoming_occurrences || []).length).length;
+      const detail = 'Strava returned ' + allEvents.length + ' event' + (allEvents.length === 1 ? '' : 's') +
+        ' across your clubs, ' + withOccurrences + ' with scheduled dates, none of them upcoming.';
       document.getElementById('events-list').innerHTML = anyClubFailed
-        ? '<p style="font-size:13px;color:#d29922">No upcoming events found, but some clubs failed to load (possible rate limit). Try refreshing in a few minutes.</p>'
-        : '<p style="font-size:13px;color:#7d8590">No upcoming group events found in your clubs.</p>';
+        ? '<p style="font-size:13px;color:#d29922">Some clubs failed to load (possible rate limit). Try again in a few minutes.<br><span style="color:#7d8590;font-size:12px">' + detail + '</span></p>'
+        : '<p style="font-size:13px;color:#7d8590">No upcoming group events found in your clubs.<br><span style="font-size:12px;color:#57606a">' + detail + ' If a club posts a recurring ride you expect to see here, it may not be shared to Strava as a club <em>event</em>.</span></p>';
       return;
     }
 
@@ -6546,55 +6558,55 @@ async function renderFullKomList() {
 
 
 // ==================== MAP ====================
-let eldoradoMap = null;
-let eldoradoMapLayers = { achievements: null, heat: null, route: null };
-let eldoradoMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today', segmentDistanceIndex:0 };
-let eldoradoMapBoundsFit = false; // only auto-fit map bounds once; subsequent renders preserve the user's zoom/pan
+let palmaresMap = null;
+let palmaresMapLayers = { achievements: null, heat: null, route: null };
+let palmaresMapState = { koms:true, top10s:true, bike:true, run:true, wind:true, heat:false, windDay:'today', segmentDistanceIndex:0 };
+let palmaresMapBoundsFit = false; // only auto-fit map bounds once; subsequent renders preserve the user's zoom/pan
 
 // Put your URL-restricted Mapbox public token here for production, or paste it in Settings for local testing.
 // Public Mapbox tokens begin with "pk." and are safe to ship when URL-restricted in your Mapbox account.
 const MAPBOX_PUBLIC_TOKEN = ''; // Do not commit Mapbox tokens to GitHub. Paste your public pk token in Settings, or inject it from hosting env at build time.
-let eldoradoBaseTileLayer = null;
+let palmaresBaseTileLayer = null;
 
-function getEldoradoMapboxToken() {
+function getPalmaresMapboxToken() {
   const s = getSettings ? getSettings() : {};
   return (s.mapboxToken || MAPBOX_PUBLIC_TOKEN || '').trim();
 }
 
-function getEldoradoMapStyle() {
+function getPalmaresMapStyle() {
   const s = getSettings ? getSettings() : {};
   return (s.mapStyle || DEFAULTS.mapStyle || 'outdoors-v12');
 }
 
-function addEldoradoBaseTiles() {
-  if (!eldoradoMap || typeof L === 'undefined') return;
-  if (eldoradoBaseTileLayer) {
-    try { eldoradoMap.removeLayer(eldoradoBaseTileLayer); } catch(e) {}
+function addPalmaresBaseTiles() {
+  if (!palmaresMap || typeof L === 'undefined') return;
+  if (palmaresBaseTileLayer) {
+    try { palmaresMap.removeLayer(palmaresBaseTileLayer); } catch(e) {}
   }
 
-  const token = getEldoradoMapboxToken();
-  const style = getEldoradoMapStyle();
+  const token = getPalmaresMapboxToken();
+  const style = getPalmaresMapStyle();
 
   if (token && token.indexOf('pk.') === 0) {
-    eldoradoBaseTileLayer = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/' + style + '/tiles/512/{z}/{x}/{y}@2x?access_token=' + encodeURIComponent(token), {
+    palmaresBaseTileLayer = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/' + style + '/tiles/512/{z}/{x}/{y}@2x?access_token=' + encodeURIComponent(token), {
       maxZoom: 19,
       tileSize: 512,
       zoomOffset: -1,
       attribution: '&copy; Mapbox &copy; OpenStreetMap'
-    }).addTo(eldoradoMap);
+    }).addTo(palmaresMap);
     setMapStatus('Mapbox ' + style.replace('-v12','').replace('-v11','') + ' map style is active.');
   } else {
     // Safe fallback so the page never goes blank while you are out of API tokens or before a Mapbox token is added.
-    eldoradoBaseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    palmaresBaseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(eldoradoMap);
+    }).addTo(palmaresMap);
     setMapStatus('Using OpenStreetMap fallback. Add your Mapbox public token in Settings to enable Mapbox tiles.');
   }
 }
 
-function resetEldoradoMapTiles() {
-  if (eldoradoMap) addEldoradoBaseTiles();
+function resetPalmaresMapTiles() {
+  if (palmaresMap) addPalmaresBaseTiles();
 }
 
 // Home base (Smithtown, NY) - the map's default view, and the reference
@@ -6602,8 +6614,8 @@ function resetEldoradoMapTiles() {
 // from home) so they can't drag the default auto-fit zoom out to cover half
 // the country. A single far-off activity used to blow away the zoom the
 // user carefully set every time bounds were recalculated.
-const ELDORADO_HOME_LATLNG = [40.86, -73.20];
-const ELDORADO_HOME_RADIUS_MILES = 60;
+const PALMARES_HOME_LATLNG = [40.86, -73.20];
+const PALMARES_HOME_RADIUS_MILES = 60;
 
 function milesBetweenLatLng(a, b) {
   const dLat = a[0] - b[0];
@@ -6611,28 +6623,28 @@ function milesBetweenLatLng(a, b) {
   return Math.sqrt(dLat*dLat + dLng*dLng) * 69; // ~69 miles per degree latitude
 }
 
-function isNearEldoradoHome(latlng) {
-  return milesBetweenLatLng(latlng, ELDORADO_HOME_LATLNG) <= ELDORADO_HOME_RADIUS_MILES;
+function isNearPalmaresHome(latlng) {
+  return milesBetweenLatLng(latlng, PALMARES_HOME_LATLNG) <= PALMARES_HOME_RADIUS_MILES;
 }
 
-function initEldoradoMap() {
-  const el = document.getElementById('eldorado-map');
+function initPalmaresMap() {
+  const el = document.getElementById('palmares-map');
   if (!el || typeof L === 'undefined') return;
-  if (eldoradoMap) { setTimeout(function(){ eldoradoMap.invalidateSize(); }, 50); return; }
-  eldoradoMap = L.map('eldorado-map', { scrollWheelZoom: false }).setView(ELDORADO_HOME_LATLNG, 11);
-  addEldoradoBaseTiles();
-  addEldoradoLocateControl();
-  setEldoradoMapDistanceFilter(eldoradoMapState.segmentDistanceIndex || 0);
-  eldoradoMapLayers.achievements = L.layerGroup().addTo(eldoradoMap);
-  eldoradoMapLayers.heat = L.layerGroup().addTo(eldoradoMap);
+  if (palmaresMap) { setTimeout(function(){ palmaresMap.invalidateSize(); }, 50); return; }
+  palmaresMap = L.map('palmares-map', { scrollWheelZoom: false }).setView(PALMARES_HOME_LATLNG, 11);
+  addPalmaresBaseTiles();
+  addPalmaresLocateControl();
+  setPalmaresMapDistanceFilter(palmaresMapState.segmentDistanceIndex || 0);
+  palmaresMapLayers.achievements = L.layerGroup().addTo(palmaresMap);
+  palmaresMapLayers.heat = L.layerGroup().addTo(palmaresMap);
   // Route layer sits above achievements so the planned route line is
   // always visible on top of KOM overlays.
-  eldoradoMapLayers.route = L.layerGroup().addTo(eldoradoMap);
-  eldoradoMap.on('click', onMapClickForRouteBuilder);
-  setTimeout(function(){ eldoradoMap.invalidateSize(); }, 150);
+  palmaresMapLayers.route = L.layerGroup().addTo(palmaresMap);
+  palmaresMap.on('click', onMapClickForRouteBuilder);
+  setTimeout(function(){ palmaresMap.invalidateSize(); }, 150);
 }
 
-function addEldoradoLocateControl() {
+function addPalmaresLocateControl() {
   const LocateControl = L.Control.extend({
     options: { position: 'topleft' },
     onAdd: function() {
@@ -6649,16 +6661,16 @@ function addEldoradoLocateControl() {
       L.DomEvent.on(btn, 'click', function(e) {
         L.DomEvent.preventDefault(e);
         L.DomEvent.stopPropagation(e);
-        locateEldoradoUser();
+        locatePalmaresUser();
       });
       return div;
     }
   });
-  eldoradoMap.addControl(new LocateControl());
+  palmaresMap.addControl(new LocateControl());
 }
 
-let eldoradoLocateMarker = null;
-function locateEldoradoUser() {
+let palmaresLocateMarker = null;
+function locatePalmaresUser() {
   if (!navigator.geolocation) {
     showToast('⚠️', 'Not supported', 'Your browser does not support geolocation.');
     return;
@@ -6666,10 +6678,10 @@ function locateEldoradoUser() {
   setMapStatus('Locating you...');
   navigator.geolocation.getCurrentPosition(function(pos) {
     const latlng = [pos.coords.latitude, pos.coords.longitude];
-    if (eldoradoLocateMarker) eldoradoMap.removeLayer(eldoradoLocateMarker);
-    eldoradoLocateMarker = L.circleMarker(latlng, { radius: 8, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.9, weight: 2 }).addTo(eldoradoMap);
-    eldoradoLocateMarker.bindPopup('You are here').openPopup();
-    eldoradoMap.setView(latlng, 13);
+    if (palmaresLocateMarker) palmaresMap.removeLayer(palmaresLocateMarker);
+    palmaresLocateMarker = L.circleMarker(latlng, { radius: 8, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.9, weight: 2 }).addTo(palmaresMap);
+    palmaresLocateMarker.bindPopup('You are here').openPopup();
+    palmaresMap.setView(latlng, 13);
     setMapStatus('');
   }, function(err) {
     setMapStatus('');
@@ -6682,28 +6694,28 @@ function setMapStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-function toggleEldoradoMapLayer(key) {
-  eldoradoMapState[key] = !eldoradoMapState[key];
+function togglePalmaresMapLayer(key) {
+  palmaresMapState[key] = !palmaresMapState[key];
   const btn = document.getElementById('map-toggle-' + key);
-  if (btn) btn.classList.toggle('active', !!eldoradoMapState[key]);
-  renderEldoradoMap();
+  if (btn) btn.classList.toggle('active', !!palmaresMapState[key]);
+  renderPalmaresMap();
 }
 
-function setEldoradoMapWind(day) {
+function setPalmaresMapWind(day) {
   // Clicking the active day again turns wind coloring off. Clicking the
   // inactive day switches to it and enables wind coloring. This gives us
   // "off / today / tomorrow" states via just two buttons.
-  if (eldoradoMapState.wind && eldoradoMapState.windDay === day) {
-    eldoradoMapState.wind = false;
+  if (palmaresMapState.wind && palmaresMapState.windDay === day) {
+    palmaresMapState.wind = false;
   } else {
-    eldoradoMapState.wind = true;
-    eldoradoMapState.windDay = day;
+    palmaresMapState.wind = true;
+    palmaresMapState.windDay = day;
   }
   ['today', 'tomorrow'].forEach(function(d) {
     const btn = document.getElementById('map-toggle-wind-' + d);
-    if (btn) btn.classList.toggle('active', eldoradoMapState.wind && eldoradoMapState.windDay === d);
+    if (btn) btn.classList.toggle('active', palmaresMapState.wind && palmaresMapState.windDay === d);
   });
-  renderEldoradoMap();
+  renderPalmaresMap();
 }
 
 const MAP_SEGMENT_DISTANCE_BINS = [
@@ -6719,18 +6731,18 @@ const MAP_SEGMENT_DISTANCE_BINS = [
   { label:'50+ mi', min:50, max:null }
 ];
 
-function setEldoradoMapDistanceFilter(value) {
+function setPalmaresMapDistanceFilter(value) {
   const idx = Math.max(0, Math.min(MAP_SEGMENT_DISTANCE_BINS.length - 1, parseInt(value, 10) || 0));
-  eldoradoMapState.segmentDistanceIndex = idx;
+  palmaresMapState.segmentDistanceIndex = idx;
   const slider = document.getElementById('map-segment-distance');
   const label = document.getElementById('map-segment-distance-label');
   if (slider) slider.value = idx;
   if (label) label.textContent = MAP_SEGMENT_DISTANCE_BINS[idx].label;
-  renderEldoradoMap();
+  renderPalmaresMap();
 }
 
 function currentMapSegmentDistanceLabel() {
-  const bin = MAP_SEGMENT_DISTANCE_BINS[eldoradoMapState.segmentDistanceIndex || 0] || MAP_SEGMENT_DISTANCE_BINS[0];
+  const bin = MAP_SEGMENT_DISTANCE_BINS[palmaresMapState.segmentDistanceIndex || 0] || MAP_SEGMENT_DISTANCE_BINS[0];
   return bin.label;
 }
 
@@ -6748,7 +6760,7 @@ function distanceMilesForMapEntry(entry, detail, points) {
 }
 
 function isMapDistanceVisible(distanceMi) {
-  const idx = eldoradoMapState.segmentDistanceIndex || 0;
+  const idx = palmaresMapState.segmentDistanceIndex || 0;
   const bin = MAP_SEGMENT_DISTANCE_BINS[idx] || MAP_SEGMENT_DISTANCE_BINS[0];
   if (idx === 0) return true;
   if (distanceMi == null) return false;
@@ -6785,9 +6797,9 @@ function toggleRouteBuilder() {
   const panel = document.getElementById('route-builder-panel');
   if (btn) btn.classList.toggle('active', routeBuilderActive);
   if (panel) panel.style.display = routeBuilderActive ? 'block' : 'none';
-  if (eldoradoMap) {
+  if (palmaresMap) {
     // Change cursor to signal click-to-drop mode
-    eldoradoMap.getContainer().style.cursor = routeBuilderActive ? 'crosshair' : '';
+    palmaresMap.getContainer().style.cursor = routeBuilderActive ? 'crosshair' : '';
   }
   updateRouteStats();
   renderSavedRoutes();
@@ -6843,7 +6855,7 @@ function addWaypointMarker(wp, index) {
   const color = isStart ? '#3fb950' : '#e0691a';
   const marker = L.circleMarker([wp.lat, wp.lng], {
     radius: 7, color: '#0d1117', fillColor: color, weight: 2, opacity: 1, fillOpacity: 1
-  }).addTo(eldoradoMapLayers.route);
+  }).addTo(palmaresMapLayers.route);
   marker.bindTooltip(String(index), { permanent: true, direction: 'top', offset: [0, -6], className: 'route-wp-tooltip' });
   routeMarkers.push(marker);
 }
@@ -6910,7 +6922,7 @@ async function routeLeg(legIndex) {
     // Remove the waypoint that failed to route so state stays consistent
     routeWaypoints.splice(legIndex + 1, 1);
     if (routeMarkers[legIndex + 1]) {
-      eldoradoMapLayers.route.removeLayer(routeMarkers[legIndex + 1]);
+      palmaresMapLayers.route.removeLayer(routeMarkers[legIndex + 1]);
       routeMarkers.splice(legIndex + 1, 1);
     }
   } finally {
@@ -6956,7 +6968,7 @@ async function fetchElevations(points) {
 }
 
 function renderRoutePolyline() {
-  if (routeLine) { eldoradoMapLayers.route.removeLayer(routeLine); routeLine = null; }
+  if (routeLine) { palmaresMapLayers.route.removeLayer(routeLine); routeLine = null; }
   const allPoints = [];
   routeLegs.forEach(function(leg) {
     if (!leg || !leg.points) return;
@@ -6964,7 +6976,7 @@ function renderRoutePolyline() {
   });
   if (allPoints.length >= 2) {
     routeLine = L.polyline(allPoints, { color: '#e0691a', weight: 4, opacity: 0.9 });
-    routeLine.addTo(eldoradoMapLayers.route);
+    routeLine.addTo(palmaresMapLayers.route);
     // Ensure waypoint markers stay above the line
     routeMarkers.forEach(function(m){ if (m.bringToFront) m.bringToFront(); });
   }
@@ -6998,7 +7010,7 @@ function undoRouteWaypoint() {
   routeWaypoints.pop();
   routeLegs.pop();
   const lastMarker = routeMarkers.pop();
-  if (lastMarker) eldoradoMapLayers.route.removeLayer(lastMarker);
+  if (lastMarker) palmaresMapLayers.route.removeLayer(lastMarker);
   renderRoutePolyline();
   updateRouteStats();
   setRouteStatus(routeWaypoints.length ? 'Waypoint removed. Click to add more.' : 'Route cleared. Click on the map to start again.');
@@ -7008,7 +7020,7 @@ function clearRoute() {
   routeWaypoints = [];
   routeLegs = [];
   routeMarkers = [];
-  if (eldoradoMapLayers.route) eldoradoMapLayers.route.clearLayers();
+  if (palmaresMapLayers.route) palmaresMapLayers.route.clearLayers();
   routeLine = null;
   routeSegmentHighlights = [];
   routeSegmentsOnRoute = [];
@@ -7106,7 +7118,7 @@ function minDistancePolylineToPolylineMeters(segPoints, routePoints, thresholdM)
 
 function clearRouteSegmentHighlights() {
   routeSegmentHighlights.forEach(function(layer) {
-    try { eldoradoMapLayers.route.removeLayer(layer); } catch(e) {}
+    try { palmaresMapLayers.route.removeLayer(layer); } catch(e) {}
   });
   routeSegmentHighlights = [];
 }
@@ -7146,7 +7158,7 @@ async function findRouteSegmentsOnRoute() {
     });
     routeSegmentsOnRoute.forEach(function(m) {
       const color = m.entry.kind === 'kom' ? '#C9A227' : '#58a6ff';
-      const line = L.polyline(m.points, { color: color, weight: 6, opacity: 0.95, dashArray: m.entry.kind === 'kom' ? null : '6,4' }).addTo(eldoradoMapLayers.route);
+      const line = L.polyline(m.points, { color: color, weight: 6, opacity: 0.95, dashArray: m.entry.kind === 'kom' ? null : '6,4' }).addTo(palmaresMapLayers.route);
       line.bindPopup(popupForMapEntry(m.entry, m.detail, null) + '<div style="margin-top:6px;font-size:11px;color:#7d8590">On planned route · about ' + m.distanceFromRouteM + 'm from route line</div>');
       routeSegmentHighlights.push(line);
     });
@@ -7292,7 +7304,7 @@ async function loadSavedRoute(id) {
   renderRoutePolyline();
   updateRouteStats();
   setRouteStatus('Loaded saved route: ' + (r.name || 'Saved route'));
-  if (routeLine && eldoradoMap) { try { eldoradoMap.fitBounds(routeLine.getBounds(), { padding:[24,24], maxZoom:14 }); } catch(e) {} }
+  if (routeLine && palmaresMap) { try { palmaresMap.fitBounds(routeLine.getBounds(), { padding:[24,24], maxZoom:14 }); } catch(e) {} }
 }
 
 async function deleteSavedRoute(id) {
@@ -7405,7 +7417,7 @@ function getMapWind(day) {
 }
 
 function windForLine(points) {
-  const wind = getMapWind(eldoradoMapState.windDay);
+  const wind = getMapWind(palmaresMapState.windDay);
   if (!wind || !points || points.length < 2) return null;
   const start = points[0], end = points[points.length - 1];
   const segmentBearing = bearingBetween(start, end);
@@ -7421,7 +7433,7 @@ function windForLine(points) {
 }
 
 function mapColorForEntry(entry, points) {
-  if (eldoradoMapState.wind) {
+  if (palmaresMapState.wind) {
     const wind = windForLine(points);
     if (wind) return wind.color;
   }
@@ -7482,8 +7494,8 @@ function approximatePointForEntry(entry) {
 
 function isMapEntryVisible(entry) {
   const sport = sportGroupForType(entry.activity_type);
-  const sportOK = (sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run);
-  const kindOK = (entry.kind === 'kom' && eldoradoMapState.koms) || (entry.kind === 'top10' && eldoradoMapState.top10s);
+  const sportOK = (sport === 'ride' && palmaresMapState.bike) || (sport === 'run' && palmaresMapState.run);
+  const kindOK = (entry.kind === 'kom' && palmaresMapState.koms) || (entry.kind === 'top10' && palmaresMapState.top10s);
   return sportOK && kindOK;
 }
 
@@ -7503,7 +7515,7 @@ function popupForMapEntry(entry, detail, wind) {
   const date = entry.date ? new Date(entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
   const dist = detail && detail.distance ? (detail.distance/1609.34).toFixed(2) + ' mi' : '';
   const elev = detail && detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft gain' : '';
-  const windLine = wind ? '<div><strong>' + (eldoradoMapState.windDay === 'today' ? 'Today' : 'Tomorrow') + ':</strong> ' + wind.label + ' <span style="color:#57606a">(' + Math.round(wind.windSpeed) + ' mph wind)</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
+  const windLine = wind ? '<div><strong>' + (palmaresMapState.windDay === 'today' ? 'Today' : 'Tomorrow') + ':</strong> ' + wind.label + ' <span style="color:#57606a">(' + Math.round(wind.windSpeed) + ' mph wind)</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
   return '<div class="map-popup">' +
     '<div class="map-popup-title">' + escapeHTML(entry.segment_name || 'Segment') + '</div>' +
     '<div><strong>' + rank + '</strong> &middot; ' + sport + '</div>' +
@@ -7515,9 +7527,9 @@ function popupForMapEntry(entry, detail, wind) {
 }
 
 function renderHeatLayer() {
-  if (!eldoradoMap || !eldoradoMapLayers.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
-  eldoradoMapLayers.heat.clearLayers();
-  if (!eldoradoMapState.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
+  if (!palmaresMap || !palmaresMapLayers.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
+  palmaresMapLayers.heat.clearLayers();
+  if (!palmaresMapState.heat) return { activityCount: 0, pointCount: 0, missing: 0 };
 
   // Road-style heatmap: draw each activity polyline as a semi-transparent
   // line. Where multiple activities overlap the same road, the alpha
@@ -7526,12 +7538,12 @@ function renderHeatLayer() {
   // Strava's own heatmap does and is what road cyclists actually want
   // (which roads have I ridden, and how often).
   let activityCount = 0, missing = 0, pointCount = 0;
-  const anySport = !!(eldoradoMapState.bike || eldoradoMapState.run);
+  const anySport = !!(palmaresMapState.bike || palmaresMapState.run);
   if (!anySport) return { activityCount: 0, pointCount: 0, missing: 0 };
 
   allActivities.forEach(function(a) {
     const sport = sportGroupForType(a.type);
-    if (!((sport === 'ride' && eldoradoMapState.bike) || (sport === 'run' && eldoradoMapState.run))) return;
+    if (!((sport === 'ride' && palmaresMapState.bike) || (sport === 'run' && palmaresMapState.run))) return;
     const poly = a.map && (a.map.summary_polyline || a.map.polyline);
     const pts = decodePolyline(poly);
     if (!pts.length) { missing++; return; }
@@ -7547,7 +7559,7 @@ function renderHeatLayer() {
       opacity: 0.08,
       lineJoin: 'round',
       interactive: false // don't intercept clicks - achievement lines above should stay clickable
-    }).addTo(eldoradoMapLayers.heat);
+    }).addTo(palmaresMapLayers.heat);
   });
 
   return { activityCount, pointCount, missing };
@@ -7692,9 +7704,9 @@ async function renderTailwindSegments(dayIdx) {
   }
 }
 
-async function renderEldoradoMap() {
-  initEldoradoMap();
-  if (!eldoradoMap || !eldoradoMapLayers.achievements) return;
+async function renderPalmaresMap() {
+  initPalmaresMap();
+  if (!palmaresMap || !palmaresMapLayers.achievements) return;
 
   // Wait for weather data before drawing so wind colors are actually
   // applied on the first render. The prior fire-and-forget approach set
@@ -7713,7 +7725,7 @@ async function renderEldoradoMap() {
     }
   }
 
-  eldoradoMapLayers.achievements.clearLayers();
+  palmaresMapLayers.achievements.clearLayers();
 
   const result = await getMapAchievementEntries();
   const visibleSportKindEntries = result.entries.filter(isMapEntryVisible);
@@ -7745,7 +7757,7 @@ async function renderEldoradoMap() {
           radius: entry.kind === 'kom' ? 7 : 5,
           color: color, fillColor: color,
           weight: 2, opacity: 0.9, fillOpacity: 0.6
-        }).addTo(eldoradoMapLayers.achievements);
+        }).addTo(palmaresMapLayers.achievements);
         marker.bindPopup(popupForMapEntry(entry, detail, wind) + '<div style="margin-top:6px;font-size:11px;color:#7d8590">Approximate location — enrich this segment for exact geometry.</div>');
         bounds.push(approx);
         drawn++;
@@ -7760,7 +7772,7 @@ async function renderEldoradoMap() {
     const opacity = entry.kind === 'kom' ? 0.95 : 0.78;
     const lineOptions = { color: color, weight: weight, opacity: opacity, lineJoin: 'round' };
     if (entry.kind === 'top10') lineOptions.dashArray = '8 6';
-    const line = L.polyline(points, lineOptions).addTo(eldoradoMapLayers.achievements);
+    const line = L.polyline(points, lineOptions).addTo(palmaresMapLayers.achievements);
     line.bindPopup(popupForMapEntry(entry, detail, wind));
     points.forEach(function(p){ bounds.push(p); });
     drawn++;
@@ -7775,12 +7787,12 @@ async function renderEldoradoMap() {
   // Points are also filtered to near home before fitting: a single distant
   // trip ride/run (or achievement recorded on one) used to drag fitBounds
   // out to cover the whole country. If nothing is near home, the map just
-  // keeps its default Smithtown view from initEldoradoMap instead of
+  // keeps its default Smithtown view from initPalmaresMap instead of
   // fitting to wherever the outlier data happens to be.
-  if (!eldoradoMapBoundsFit) {
-    const nearHomeBounds = bounds.filter(isNearEldoradoHome);
+  if (!palmaresMapBoundsFit) {
+    const nearHomeBounds = bounds.filter(isNearPalmaresHome);
     if (nearHomeBounds.length) {
-      try { eldoradoMap.fitBounds(nearHomeBounds, { padding: [24, 24], maxZoom: 13 }); eldoradoMapBoundsFit = true; } catch(e) {}
+      try { palmaresMap.fitBounds(nearHomeBounds, { padding: [24, 24], maxZoom: 13 }); palmaresMapBoundsFit = true; } catch(e) {}
     } else if (heatStats.pointCount) {
       const heatBounds = [];
       allActivities.forEach(function(a) {
@@ -7788,15 +7800,15 @@ async function renderEldoradoMap() {
         const pts = decodePolyline(poly);
         if (pts.length) { heatBounds.push(pts[0]); heatBounds.push(pts[pts.length-1]); }
       });
-      const nearHomeHeatBounds = heatBounds.filter(isNearEldoradoHome);
-      if (nearHomeHeatBounds.length) { eldoradoMap.fitBounds(nearHomeHeatBounds, { padding: [24, 24], maxZoom: 12 }); eldoradoMapBoundsFit = true; }
+      const nearHomeHeatBounds = heatBounds.filter(isNearPalmaresHome);
+      if (nearHomeHeatBounds.length) { palmaresMap.fitBounds(nearHomeHeatBounds, { padding: [24, 24], maxZoom: 12 }); palmaresMapBoundsFit = true; }
     }
   }
 
   const countsEl = document.getElementById('map-counts');
   if (countsEl) {
     const rangeLabel = currentMapSegmentDistanceLabel();
-    countsEl.textContent = drawn + ' mapped segments' + (rangeLabel !== 'All lengths' ? ' · ' + rangeLabel : '') + (eldoradoMapState.heat ? ' · ' + heatStats.activityCount + ' heatmap activities' : '');
+    countsEl.textContent = drawn + ' mapped segments' + (rangeLabel !== 'All lengths' ? ' · ' + rangeLabel : '') + (palmaresMapState.heat ? ' · ' + heatStats.activityCount + ' heatmap activities' : '');
   }
 
   let status = '';
@@ -7806,18 +7818,18 @@ async function renderEldoradoMap() {
   else if (drawn === 0) status = 'Your KOM/Top 10 list exists, but no segment geometry or activity polylines are available yet. Enrich segments in the Segments tab so exact geometry can be shown.';
   else {
     let mode;
-    if (eldoradoMapState.wind && hasWindData) mode = (eldoradoMapState.windDay === 'today' ? "today's" : "tomorrow's") + ' wind advantage';
-    else if (eldoradoMapState.wind && !hasWindData) mode = 'achievement type (wind forecast unavailable — visit the Weather tab and reload)';
+    if (palmaresMapState.wind && hasWindData) mode = (palmaresMapState.windDay === 'today' ? "today's" : "tomorrow's") + ' wind advantage';
+    else if (palmaresMapState.wind && !hasWindData) mode = 'achievement type (wind forecast unavailable — visit the Weather tab and reload)';
     else mode = 'achievement type';
     status = 'Showing ' + drawn + ' KOM/Top 10 segment' + (drawn === 1 ? '' : 's') + ' colored by ' + mode + '.';
     if (hiddenByDistance) status += ' ' + hiddenByDistance + ' segment' + (hiddenByDistance === 1 ? ' is' : 's are') + ' hidden by the length filter (' + currentMapSegmentDistanceLabel() + ').';
     if (missingGeometry) status += ' ' + missingGeometry + ' segment' + (missingGeometry === 1 ? ' is' : 's are') + ' missing geometry entirely - enrich in the Segments tab to add exact full-length lines.';
   }
-  if (eldoradoMapState.heat) {
+  if (palmaresMapState.heat) {
     status += ' Road heatmap: darker roads mean more rides/runs on them; light traces are places you visited once.';
   }
   setMapStatus(status);
-  setTimeout(function(){ if (eldoradoMap) eldoradoMap.invalidateSize(); }, 50);
+  setTimeout(function(){ if (palmaresMap) palmaresMap.invalidateSize(); }, 50);
 }
 
 // INIT
