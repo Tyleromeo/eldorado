@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — Palmarès</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; line-height: 1.65; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+.logo { font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #C9A227; letter-spacing: 2px; }
+.logo span { display: block; font-size: 12px; font-weight: 400; color: #7d8590; letter-spacing: 0; font-family: -apple-system, sans-serif; margin-top: 2px; }
+h1 { font-size: 27px; margin: 2rem 0 0.35rem; }
+.updated { font-size: 13px; color: #7d8590; margin-bottom: 2rem; }
+h2 { font-size: 17px; margin: 2rem 0 0.6rem; color: #e6edf3; border-top: 1px solid #21262d; padding-top: 1.5rem; }
+p, li { font-size: 15px; color: #c9d1d9; margin-bottom: 0.75rem; }
+ul { padding-left: 1.35rem; }
+strong { color: #e6edf3; }
+a { color: #C9A227; }
+.callout { background: #161b22; border: 1px solid #30363d; border-left: 3px solid #3fb950; border-radius: 8px; padding: 1rem 1.15rem; margin: 1.25rem 0; }
+.callout p:last-child { margin-bottom: 0; }
+footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #21262d; font-size: 13px; color: #7d8590; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="logo">Palmarès<span>training intelligence</span></div>
+
+<h1>Privacy Policy</h1>
+<div class="updated">Last updated: July 20, 2026</div>
+
+<p>Palmarès is a personal training dashboard that connects to your Strava account to analyze your rides and runs. This policy explains exactly what data the app touches, where it goes, and what it never does.</p>
+
+<p>Palmarès is operated by an individual developer, not a company. There is no advertising, no analytics or tracking software, and no data is ever sold.</p>
+
+<h2>Apple Health data stays on your device</h2>
+
+<div class="callout">
+  <p><strong>Health data is never transmitted anywhere.</strong> It is read on your iPhone, used to calculate figures shown only to you, and stored solely in your device's local app storage. It is never uploaded to any server, never included in any backup we control, and never shared with anyone.</p>
+</div>
+
+<p>With your explicit permission, the iOS app reads the following from Apple Health, read-only. Palmarès never writes to Health:</p>
+<ul>
+  <li><strong>VO₂ max</strong> — your most recent measurement</li>
+  <li><strong>Resting heart rate</strong> and <strong>heart rate variability (SDNN)</strong> — 30-day averages</li>
+  <li><strong>Date of birth</strong> and <strong>biological sex</strong> — to compare against age-based fitness norms</li>
+  <li><strong>Body weight</strong> — for power-to-weight calculations</li>
+</ul>
+<p>These are used to calculate your "True Age" and to improve fitness estimates. You may decline any or all of these in the iOS permission prompt, or revoke them later in the Health app; the rest of Palmarès continues to work, falling back to values you enter manually.</p>
+
+<h2>Strava data</h2>
+
+<p>When you connect Strava, you authorize Palmarès through Strava's own OAuth screen. Palmarès never sees or stores your Strava password.</p>
+<p>The app retrieves and stores your activities (distance, time, elevation, power, heart rate, cadence, route maps), segment efforts and achievements, gear, and your Strava name and athlete ID. This is cached on a private database (Supabase) so the app loads quickly and doesn't re-download your entire history each time.</p>
+<p>This data is used only to display your own statistics back to you. It is not shared with other users, with one deliberate exception described below.</p>
+
+<h2>Community road reports are public</h2>
+
+<p>Palmarès includes a shared feed where riders report road resurfacing. If you submit a report, the <strong>road name, town, status, your note, and your Strava first and last name</strong> are visible to everyone using Palmarès. Do not include anything private in a report. Submitting is entirely optional — the feed is readable without ever posting.</p>
+
+<h2>Location</h2>
+
+<p>If you use "Use my location" to find nearby segments, your device's coordinates are used to filter segments and are <strong>not</strong> stored or transmitted to us. You can instead type a ZIP code, which is converted to approximate coordinates using a public lookup service. Approximate coordinates are sent to a weather service to retrieve the local forecast.</p>
+
+<h2>Third-party services</h2>
+
+<p>Palmarès sends requests to these services to function. Each receives only what it needs:</p>
+<ul>
+  <li><strong>Strava</strong> — your activity data (with your authorization)</li>
+  <li><strong>Supabase</strong> — database and server hosting for your cached activities</li>
+  <li><strong>Apple WeatherKit</strong>, <strong>Open-Meteo</strong>, <strong>weather.gov</strong> — forecasts, given approximate coordinates</li>
+  <li><strong>OpenStreetMap</strong> / <strong>Mapbox</strong> — map imagery</li>
+  <li><strong>OSRM</strong>, <strong>Open-Elevation</strong> — route planning and elevation for routes you build</li>
+  <li><strong>Zippopotam.us</strong> — converts a ZIP code you enter into coordinates</li>
+  <li><strong>Vercel</strong>, <strong>Cloudflare</strong>, <strong>unpkg</strong> — website and code library hosting</li>
+</ul>
+<p>No health data is sent to any of these.</p>
+
+<h2>Deleting your data</h2>
+
+<p>Open <strong>Settings → Disconnect Strava</strong> in the app. This revokes the app's Strava authorization and clears your stored access tokens. To remove your cached activity data or any road reports you posted, email the address below and it will be deleted.</p>
+<p>Health data is removed by deleting the app from your iPhone, since it never leaves the device.</p>
+
+<h2>Children</h2>
+<p>Palmarès is not directed at children under 13 and does not knowingly collect their data.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes materially, the date at the top will be updated. Continued use after a change constitutes acceptance.</p>
+
+<h2>Contact</h2>
+<p>Questions, data deletion requests, or privacy concerns: <a href="mailto:kamildobrowolski@gmail.com">kamildobrowolski@gmail.com</a></p>
+
+<footer>Palmarès — The work behind your records.</footer>
+
+</div>
+</body>
+</html>
