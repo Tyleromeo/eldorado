@@ -340,9 +340,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   </div>
   <div class="nav-bottom">
     <div class="status-pill"><span class="dot" id="dot"></span><span id="auth-name">not connected</span></div>
-    <button class="settings-icon-btn" id="sync-now-btn" onclick="syncNow()" title="Sync latest from Strava" aria-label="Sync latest from Strava" style="display:none">
-      <svg id="sync-now-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-    </button>
     <button class="settings-icon-btn" onclick="showSection('settings')" title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
@@ -387,6 +384,10 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   <div class="card" id="last-activity-card" style="margin-bottom:1.5rem;border:1px solid #FC4C02;display:none">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Last synced activity</div>
+      <button id="sync-now-btn" onclick="syncNow()" title="Check Strava for new activities" style="display:flex;align-items:center;gap:6px;background:transparent;border:1px solid #FC4C02;border-radius:6px;padding:4px 10px;color:#FC4C02;cursor:pointer;font-size:12px">
+        <svg id="sync-now-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Sync now
+      </button>
     </div>
     <div id="last-activity-body"></div>
   </div>
@@ -810,6 +811,9 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
             <option value="duration-asc">Shortest effort</option>
             <option value="former" id="kom-sort-former-opt">Former KOMs first</option>
           </select>
+        </div>
+        <div class="filter-group" style="flex:1;min-width:180px">
+          <input class="filter-select" id="kom-search" type="search" placeholder="Search segment or town…" oninput="onKomSearchInput()" style="width:100%;text-align:left" />
         </div>
       </div>
       <div id="kom-scan-status" style="font-size:13px;color:#7d8590;padding:8px 0"></div>
@@ -2106,6 +2110,68 @@ document.addEventListener('visibilitychange', function() {
   }
 });
 
+// ==================== PULL TO REFRESH ====================
+// Touch-only: drag down from the top of the page to run syncNow. A native
+// app build that installs its own UIRefreshControl (ios/PullToRefresh.swift)
+// sets window.hasNativeRefresh via a user script before page scripts run,
+// which disables this JS version so the two can never both fire. Older app
+// builds and mobile-web get this implementation as-is.
+(function() {
+  const THRESHOLD = 70;
+  let startY = null, pulling = false, indicator = null;
+
+  function getIndicator() {
+    if (indicator) return indicator;
+    indicator = document.createElement('div');
+    indicator.id = 'ptr-indicator';
+    indicator.style.cssText = 'position:fixed;top:-44px;left:50%;transform:translateX(-50%);z-index:300;width:36px;height:36px;border-radius:50%;background:#161b22;border:1px solid #30363d;display:flex;align-items:center;justify-content:center;transition:top 0.15s;color:#C9A227;font-size:16px;pointer-events:none';
+    indicator.textContent = '↓';
+    document.body.appendChild(indicator);
+    return indicator;
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    if (window.hasNativeRefresh || !athleteData) return;
+    if (window.scrollY > 0) return;
+    startY = e.touches[0].clientY;
+    pulling = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (startY == null) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy < 10) return;
+    pulling = true;
+    const ind = getIndicator();
+    ind.style.top = (Math.min(dy, THRESHOLD * 1.6) - 44) + 'px';
+    ind.textContent = dy >= THRESHOLD ? '↻' : '↓';
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (startY == null) return;
+    const dy = (e.changedTouches[0] ? e.changedTouches[0].clientY : startY) - startY;
+    startY = null;
+    if (!pulling) return;
+    pulling = false;
+    const ind = getIndicator();
+    if (dy >= THRESHOLD) {
+      ind.textContent = '↻';
+      ind.style.top = '12px';
+      Promise.resolve(syncNow()).finally(function() { ind.style.top = '-44px'; });
+    } else {
+      ind.style.top = '-44px';
+    }
+  }, { passive: true });
+})();
+
+// Entry point for the native app's UIRefreshControl: run the sync, then
+// tell the native side to stop its spinner via the bridge.
+window.syncNowFromNative = function() {
+  Promise.resolve(syncNow()).finally(function() {
+    notifyNative({ type: 'refreshDone' });
+  });
+};
+
 // MAIN LOAD
 async function loadAll(token) {
   currentToken = token;
@@ -2322,8 +2388,6 @@ async function loadAll(token) {
   // lets the stylesheet's normal cascade (flex on desktop, none on mobile)
   // apply correctly based on actual viewport width.
   document.getElementById('nav-links').style.removeProperty('display');
-  const syncBtn = document.getElementById('sync-now-btn');
-  if (syncBtn) syncBtn.style.removeProperty('display');
   showSection('dashboard');
 
   renderDashboard();
@@ -6803,6 +6867,20 @@ async function renderGear() {
 
 // ==================== FULL HISTORICAL KOM/CR SCAN UI ====================
 let komScanFilter = 'all';
+
+// Text search over the KOM/Top-10 lists: matches segment name and, for
+// enriched segments, the town/state where the segment lives. Debounced so
+// the full list isn't rebuilt on every keystroke.
+let komSearchQuery = '';
+let _komSearchDebounce = null;
+function onKomSearchInput() {
+  clearTimeout(_komSearchDebounce);
+  _komSearchDebounce = setTimeout(function() {
+    const el = document.getElementById('kom-search');
+    komSearchQuery = el ? el.value.trim().toLowerCase() : '';
+    renderFullKomList();
+  }, 250);
+}
 let komSortMode = 'date'; // 'date', 'popularity', 'duration-desc' (longest first), or 'duration-asc' (shortest first)
 let komView = 'koms'; // 'koms' or 'top10s' - which list section is visible
 let komScanRunning = false;
@@ -7092,7 +7170,18 @@ async function renderFullKomList() {
   // Counts on the view toggle, matched to the current sport filter so the
   // toggle answers "how many of each do I have here?" without a round trip
   // through the other view.
-  const inSport = e => komEntryVisible(e.activity_type);
+  // Combined row visibility: sport (settings + dropdown) AND text search.
+  // Used for the tab counts, town rankings, and the lists below, so every
+  // number on the page agrees with what's actually listed.
+  const matchesKomSearch = e => {
+    if (!komSearchQuery) return true;
+    const detail = enrichedCache[e.segment_id];
+    const hay = ((e.segment_name || '') + ' ' +
+      (detail && detail.city ? detail.city : '') + ' ' +
+      (detail && detail.state ? detail.state : '')).toLowerCase();
+    return hay.includes(komSearchQuery);
+  };
+  const inSport = e => komEntryVisible(e.activity_type) && matchesKomSearch(e);
   const komCountEl = document.getElementById('kom-count-koms');
   const top10CountEl = document.getElementById('kom-count-top10s');
   if (komCountEl) komCountEl.textContent = stillHeldKoms.filter(inSport).length;
@@ -7134,7 +7223,7 @@ async function renderFullKomList() {
     const displayNameCounts = {};
     const townEntries = {}; // key -> [{ name, sport, elapsed, date, is_kom, is_former }]
     function countInTown(entry, isKom) {
-      if (!komEntryVisible(entry.activity_type)) return;
+      if (!inSport(entry)) return;
       const detail = enrichedCache[entry.segment_id];
       if (!detail || !detail.city) return;
       const key = normalizeKey(detail.city, detail.state);
@@ -7206,8 +7295,8 @@ async function renderFullKomList() {
     }
   }
 
-  const koms = stillHeldKoms.filter(k => komEntryVisible(k.activity_type));
-  const top10s = allTop10s.filter(k => komEntryVisible(k.activity_type));
+  const koms = stillHeldKoms.filter(inSport);
+  const top10s = allTop10s.filter(inSport);
 
   if (totalsEl) {
     // One KOM/Top-10 chip pair per Palmarès sport that's enabled in
@@ -7235,7 +7324,9 @@ async function renderFullKomList() {
   }
 
   if (!koms.length && !top10s.length) {
-    listEl.innerHTML = '<p style="font-size:13px;color:#7d8590;padding:1rem 0">No KOMs or Top 10s found yet for this filter. Run the scan above to build your full history.</p>';
+    listEl.innerHTML = komSearchQuery
+      ? '<p style="font-size:13px;color:#7d8590;padding:1rem 0">No KOMs or Top 10s match "' + escapeHTML(komSearchQuery) + '". Town search only covers enriched segments — if the scan hasn\'t enriched everything yet, try the segment name instead.</p>'
+      : '<p style="font-size:13px;color:#7d8590;padding:1rem 0">No KOMs or Top 10s found yet for this filter. Run the scan above to build your full history.</p>';
     return;
   }
 
@@ -7268,7 +7359,9 @@ async function renderFullKomList() {
         rankOfStr = ' &middot; #' + e.rank + (totalAthletes ? ' of ' + totalAthletes.toLocaleString() + ' athletes (at time of ride)' : '');
       }
 
-      detailLine = '<div class="row-meta" style="margin-top:2px">' + [distMi, elevFt].filter(Boolean).join(' &middot; ') + rankOfStr + '</div>';
+      // Town first: it's the piece riders actually recognize a segment by.
+      const town = detail.city ? '📍 ' + escapeHTML(detail.city + (detail.state ? ', ' + detail.state : '')) : '';
+      detailLine = '<div class="row-meta" style="margin-top:2px">' + [town, distMi, elevFt].filter(Boolean).join(' &middot; ') + rankOfStr + '</div>';
     }
 
     // Road rides are the default and carry no badge; everything else gets
