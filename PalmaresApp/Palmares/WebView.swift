@@ -56,6 +56,12 @@ struct WebView: UIViewRepresentable {
         webView.scrollView.minimumZoomScale = 1.0
         webView.scrollView.maximumZoomScale = 1.0
         webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+        // Native pull-to-refresh wired to the page's syncNow(). This also
+        // re-enables vertical bounce (a refresh control is driven by the
+        // overscroll, so it cannot fire without it) and injects
+        // window.hasNativeRefresh, which switches off the page's own JS
+        // pull-to-refresh so the two never both run.
+        PullToRefresh.shared.install(on: webView)
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -98,12 +104,23 @@ struct WebView: UIViewRepresentable {
             guard message.name == "palmaresNative" || message.name == "eldoradoNative",
                   let body = message.body as? [String: Any] else { return }
 
-            // Widget snapshots from the page: persist to the App Group and
-            // refresh the home screen widget. Routed before the auth check
-            // because both types share the one bridge channel.
-            if body["type"] as? String == "widgetData" {
+            // Non-auth bridge messages, routed before the auth check because
+            // every type shares the one palmaresNative channel:
+            //   widgetData     - snapshot for the home screen widget
+            //   eventReminders - upcoming rides to schedule notifications for
+            //   refreshDone    - page finished the pull-to-refresh sync
+            switch body["type"] as? String {
+            case "widgetData":
                 WidgetBridge.handle(body)
                 return
+            case "eventReminders":
+                EventReminders.handle(body)
+                return
+            case "refreshDone":
+                PullToRefresh.shared.end()
+                return
+            default:
+                break
             }
 
             guard body["type"] as? String == "auth" else { return }

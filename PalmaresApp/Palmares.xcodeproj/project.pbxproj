@@ -13,6 +13,8 @@
 		FA0000000000000000000014 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000004 /* Assets.xcassets */; };
 		FA0000000000000000000015 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000006 /* HealthKitManager.swift */; };
 		FA0000000000000000000016 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000008 /* WidgetBridge.swift */; };
+		FA0000000000000000000051 /* EventReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000050 /* EventReminders.swift */; };
+		FA0000000000000000000053 /* PullToRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000052 /* PullToRefresh.swift */; };
 		FA0000000000000000000017 /* HealthMetricsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000009 /* HealthMetricsReader.swift */; };
 		FB0000000000000000000011 /* PalmaresWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000001 /* PalmaresWidget.swift */; };
 		FB0000000000000000000012 /* PalmaresWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000005 /* PalmaresWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -26,6 +28,8 @@
 		FA0000000000000000000005 /* Palmares.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Palmares.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA0000000000000000000006 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
 		FA0000000000000000000008 /* WidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetBridge.swift; sourceTree = "<group>"; };
+		FA0000000000000000000050 /* EventReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventReminders.swift; sourceTree = "<group>"; };
+		FA0000000000000000000052 /* PullToRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullToRefresh.swift; sourceTree = "<group>"; };
 		FA0000000000000000000009 /* HealthMetricsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricsReader.swift; sourceTree = "<group>"; };
 		FB0000000000000000000001 /* PalmaresWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PalmaresWidget.swift; sourceTree = "<group>"; };
 		FB0000000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -84,6 +88,8 @@
 				FA0000000000000000000006 /* HealthKitManager.swift */,
 				FA0000000000000000000008 /* WidgetBridge.swift */,
 				FA0000000000000000000009 /* HealthMetricsReader.swift */,
+				FA0000000000000000000050 /* EventReminders.swift */,
+				FA0000000000000000000052 /* PullToRefresh.swift */,
 				FA0000000000000000000007 /* Palmares.entitlements */,
 				FA0000000000000000000004 /* Assets.xcassets */,
 			);
@@ -232,6 +238,8 @@
 				FA0000000000000000000015 /* HealthKitManager.swift in Sources */,
 				FA0000000000000000000016 /* WidgetBridge.swift in Sources */,
 				FA0000000000000000000017 /* HealthMetricsReader.swift in Sources */,
+				FA0000000000000000000051 /* EventReminders.swift in Sources */,
+				FA0000000000000000000053 /* PullToRefresh.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
