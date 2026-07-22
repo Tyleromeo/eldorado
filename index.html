@@ -100,15 +100,25 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .seg-btn.active .seg-count { color: #C9A227; }
 
 /* FILTER BAR - label + control pairs that wrap sanely on a narrow screen. */
+/* Filters sit above long lists, so they have to be readable at a glance and
+   tappable without aiming. The 12px selects were neither - the label and
+   value together were smaller than the list text underneath them. */
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-.filter-group { display: flex; align-items: center; gap: 6px; }
-.filter-label { font-size: 11px; color: #7d8590; text-transform: uppercase; letter-spacing: 0.4px; }
-.filter-select { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 6px 8px; color: #e6edf3; font-size: 12px; cursor: pointer; }
+.filter-group { display: flex; align-items: center; gap: 7px; }
+.filter-label { font-size: 12px; color: #7d8590; text-transform: uppercase; letter-spacing: 0.4px; }
+.filter-select { background: #0d1117; border: 1px solid #30363d; border-radius: 7px; padding: 9px 11px; color: #e6edf3; font-size: 14px; cursor: pointer; min-height: 40px; }
+/* Search gets its own full-width row under the dropdowns rather than
+   competing with them for space on the same line. */
+.filter-search-row { width: 100%; }
+.filter-search-row .filter-select { width: 100%; text-align: left; cursor: text; }
 .filter-select:focus { outline: none; border-color: #C9A227; }
 @media(max-width:720px){
   .filter-bar { gap: 8px; }
   .filter-group { flex: 1; min-width: 0; }
   .filter-select { flex: 1; min-width: 0; }
+  /* Keep search on its own row instead of being squeezed in beside the
+     dropdowns by the flex:1 above. */
+  .filter-search-row { flex-basis: 100%; }
   .seg-toggle { width: 100%; }
   .seg-btn { flex: 1; padding: 8px 10px; }
 }
@@ -500,7 +510,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
   <div class="card" id="today-wx-card">
     <div class="card-title">
-      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>Today's ride intelligence</div>
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>Weather</div>
       <a href="#" class="ext-link" onclick="showSection('map');return false" style="color:#C9A227">Full forecast ›</a>
     </div>
     <div id="today-wx-body" style="font-size:13px;color:#7d8590">Loading conditions...</div>
@@ -533,7 +543,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <div id="section-performance" class="section">
   <div class="section-header"><h2>Train</h2><p>Fitness trend, power curve, PRs, goals, zones, and coaching — your performance depth.</p></div>
 
-  <div class="card">
+  <div class="card" id="fitness-trend-card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Fitness trend</div>
       <select id="trend-range-select" onchange="setTrendRange(this.value)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#e6edf3;font-size:12px">
@@ -911,8 +921,8 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
             <option value="former" id="kom-sort-former-opt">Former KOMs first</option>
           </select>
         </div>
-        <div class="filter-group" style="flex:1;min-width:180px">
-          <input class="filter-select" id="kom-search" type="search" placeholder="Search segment or town…" oninput="onKomSearchInput()" style="width:100%;text-align:left" />
+        <div class="filter-group filter-search-row">
+          <input class="filter-select" id="kom-search" type="search" placeholder="Search segment or town…" oninput="onKomSearchInput()" />
         </div>
       </div>
       <div id="kom-scan-status" style="font-size:13px;color:#7d8590;padding:8px 0"></div>
@@ -4682,6 +4692,18 @@ function wWeeklyMiles(weeks) {
   return out;
 }
 
+// Which tiles lead each section, and which span the full width. '*' means
+// every tile in that section is full width - the Train page's cards are
+// charts and tables, which are unreadable squeezed into a half-width tile.
+const WIDGET_ORDER = {
+  dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card',
+              'today-opportunity-card', 'card-dashboard-events']
+};
+const WIDGET_FULLWIDTH = {
+  dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card'],
+  performance: '*'
+};
+
 const WIDGET_RENDERERS = {
   // In Focus: form is the number that should drive today's decision, so it
   // leads, with the load that produced it and four weeks of volume behind.
@@ -4712,20 +4734,42 @@ const WIDGET_RENDERERS = {
       '</div>';
   },
 
+  // Full width, and shows the whole picture: today's conditions plus the
+  // rest of the week, so the forecast doesn't need a tap to be useful.
   'today-wx-card': function() {
     const d = window._wxData && window._wxData.daily;
     if (!d) return null;
     const wind = msToMph(d.windspeed_10m_max[0]);
     const wc = wind > 20 ? '#f85149' : wind > 12 ? '#d29922' : '#3fb950';
-    return '<div class="w-head"><span style="font-size:24px">' + wxIcon(d.weathercode[0]) + '</span>' +
-        '<span class="w-big sm">' + Math.round(d.temperature_2m_max[0]) + '°</span>' +
-        '<span class="w-cap">/ ' + Math.round(d.temperature_2m_min[0]) + '°</span></div>' +
-      '<div class="w-sub w-truncate">' + escapeHTML(wxDesc(d.weathercode[0])) + '</div>' +
-      '<div class="w-stats"><div><div class="w-stat-v" style="color:' + wc + '">' + windArrow(d.winddirection_10m_dominant[0]) + ' ' + wind + ' mph</div>' +
-        '<div class="w-stat-l">' + windDirName(d.winddirection_10m_dominant[0]) + ' wind</div></div>' +
-        (d.precipitation_probability_max && d.precipitation_probability_max[0] != null
-          ? '<div><div class="w-stat-v">' + Math.round(d.precipitation_probability_max[0]) + '%</div><div class="w-stat-l">Rain</div></div>' : '') +
+    const rain = d.precipitation_probability_max && d.precipitation_probability_max[0] != null
+      ? Math.round(d.precipitation_probability_max[0]) : null;
+
+    const today =
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+        '<span style="font-size:30px;line-height:1">' + wxIcon(d.weathercode[0]) + '</span>' +
+        '<div><div class="w-big sm">' + Math.round(d.temperature_2m_max[0]) + '° <span class="w-cap">/ ' + Math.round(d.temperature_2m_min[0]) + '°</span></div>' +
+          '<div class="w-sub">' + escapeHTML(wxDesc(d.weathercode[0])) + '</div></div>' +
+        '<div style="margin-left:auto;text-align:right">' +
+          '<div class="w-stat-v" style="color:' + wc + '">' + windArrow(d.winddirection_10m_dominant[0]) + ' ' + wind + ' mph</div>' +
+          '<div class="w-stat-l">' + windDirName(d.winddirection_10m_dominant[0]) + ' wind' + (rain !== null ? ' &middot; ' + rain + '% rain' : '') + '</div>' +
+        '</div>' +
       '</div>';
+
+    // Rest of the week: day, icon, high/low, wind - the same row the full
+    // forecast shows, compressed to fit without scrolling.
+    const days = Math.min(6, (d.time || []).length);
+    let strip = '';
+    for (let i = 1; i < days; i++) {
+      const dayName = new Date(d.time[i] + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+      const w = msToMph(d.windspeed_10m_max[i]);
+      strip += '<div style="flex:1;min-width:0;text-align:center">' +
+        '<div class="w-stat-l">' + dayName + '</div>' +
+        '<div style="font-size:17px;line-height:1.3">' + wxIcon(d.weathercode[i]) + '</div>' +
+        '<div style="font-size:12px;color:#e6edf3">' + Math.round(d.temperature_2m_max[i]) + '°<span style="color:#7d8590">/' + Math.round(d.temperature_2m_min[i]) + '°</span></div>' +
+        '<div style="font-size:10px;color:' + (w > 20 ? '#f85149' : w > 12 ? '#d29922' : '#7d8590') + '">' + w + 'mph</div>' +
+      '</div>';
+    }
+    return today + (strip ? '<div style="display:flex;gap:4px;margin-top:10px;padding-top:9px;border-top:1px solid #21262d">' + strip + '</div>' : '');
   },
 
   'today-opportunity-card': function() {
@@ -4756,6 +4800,83 @@ const WIDGET_RENDERERS = {
         (a.total_elevation_gain ? '<div><div class="w-stat-v">' + Math.round(a.total_elevation_gain * 3.281).toLocaleString() + '</div><div class="w-stat-l">Ft climbed</div></div>' : '') +
         (a.average_watts ? '<div><div class="w-stat-v">' + Math.round(a.average_watts) + 'w</div><div class="w-stat-l">Avg power</div></div>' : '') +
       '</div>';
+  },
+
+  // ---- Train page ----
+  'fitness-trend-card': function() {
+    if (!allActivities.length) return null;
+    const m = computeMetrics(allActivities);
+    const delta = m.ctl - m.prevCtl;
+    const weeks = wWeeklyMiles(6);
+    const peak = Math.max.apply(null, weeks.concat([1]));
+    const bars = weeks.map(function(mi, i) {
+      const h = Math.max(3, Math.round((mi / peak) * 30));
+      return '<div class="w-bar" style="height:' + h + 'px;background:' + (i === weeks.length - 1 ? '#C9A227' : '#30363d') + '" title="' + mi + ' mi"></div>';
+    }).join('');
+    return '<div class="w-head"><span class="w-big">' + m.ctl + '</span><span class="w-cap">fitness (CTL)</span>' +
+        '<span class="w-cap" style="color:' + (delta >= 0 ? '#3fb950' : '#f85149') + '">' + (delta >= 0 ? '+' : '') + delta + ' this week</span></div>' +
+      '<div class="w-sub">Fatigue ' + m.atl + ' &middot; Form ' + (m.tsb >= 0 ? '+' : '') + m.tsb + '</div>' +
+      '<div class="w-bars">' + bars + '</div><div class="w-stat-l" style="margin-top:3px">Weekly volume, last 6 weeks</div>';
+  },
+
+  'true-age-card': function() {
+    let vo2 = null, age = null;
+    try { vo2 = getEffectiveVO2Max(); age = getEffectiveAge(); } catch (e) { return null; }
+    if (!vo2 || !vo2.value) return null;
+    return '<div class="w-head"><span class="w-big">' + Math.round(vo2.value * 10) / 10 + '</span><span class="w-cap">VO₂ max</span></div>' +
+      '<div class="w-sub">' + escapeHTML(vo2.source || 'estimated') + '</div>' +
+      (age && age.value ? '<div class="w-stats"><div><div class="w-stat-v">' + age.value + '</div><div class="w-stat-l">Age used</div></div></div>' : '');
+  },
+
+  'collapse-yoy': function() {
+    if (!allActivities.length) return null;
+    const yr = new Date().getFullYear();
+    const miFor = function(y, cutoffDay) {
+      return allActivities.filter(function(a) {
+        const d = new Date(a.start_date);
+        if (d.getFullYear() !== y) return false;
+        if (cutoffDay == null) return true;
+        const start = new Date(y, 0, 1);
+        return Math.floor((d - start) / 86400000) <= cutoffDay;
+      }).reduce(function(s, a) { return s + a.distance; }, 0) / 1609.34;
+    };
+    const dayOfYear = Math.floor((new Date() - new Date(yr, 0, 1)) / 86400000);
+    const now = Math.round(miFor(yr, null));
+    const lastToDate = Math.round(miFor(yr - 1, dayOfYear));
+    const diff = lastToDate > 0 ? Math.round(((now - lastToDate) / lastToDate) * 100) : null;
+    return '<div class="w-head"><span class="w-big">' + now.toLocaleString() + '</span><span class="w-cap">mi in ' + yr + '</span></div>' +
+      '<div class="w-sub">' + (diff === null ? 'No ' + (yr - 1) + ' data to compare'
+        : '<span style="color:' + (diff >= 0 ? '#3fb950' : '#d29922') + '">' + (diff >= 0 ? '+' : '') + diff + '%</span> vs same point in ' + (yr - 1)) + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + lastToDate.toLocaleString() + '</div><div class="w-stat-l">' + (yr - 1) + ' to date</div></div></div>';
+  },
+
+  'collapse-power-curve': function() {
+    const byYear = window.powerPRsByYear;
+    if (!byYear) return null;
+    // Best watts seen at each duration across every year on record.
+    const best = {};
+    Object.keys(byYear).forEach(function(y) {
+      Object.keys(byYear[y]).forEach(function(dur) {
+        const w = byYear[y][dur].watts;
+        if (!best[dur] || w > best[dur]) best[dur] = w;
+      });
+    });
+    const pick = [[1200, '20 min'], [300, '5 min'], [60, '1 min']].filter(function(p) { return best[p[0]]; });
+    if (!pick.length) return null;
+    return '<div class="w-head"><span class="w-big">' + Math.round(best[pick[0][0]]) + '</span><span class="w-cap">w &middot; best ' + pick[0][1] + '</span></div>' +
+      '<div class="w-stats">' + pick.slice(1).map(function(p) {
+        return '<div><div class="w-stat-v">' + Math.round(best[p[0]]) + 'w</div><div class="w-stat-l">' + p[1] + '</div></div>';
+      }).join('') + '</div>';
+  },
+
+  'collapse-personal-bests': function() {
+    if (!allActivities.length) return null;
+    const longest = allActivities.reduce(function(b, a) { return (!b || a.distance > b.distance) ? a : b; }, null);
+    const climb = allActivities.reduce(function(b, a) { return (!b || (a.total_elevation_gain || 0) > (b.total_elevation_gain || 0)) ? a : b; }, null);
+    if (!longest) return null;
+    return '<div class="w-head"><span class="w-big">' + (longest.distance / 1609.34).toFixed(1) + '</span><span class="w-cap">mi &middot; longest ride</span></div>' +
+      '<div class="w-sub w-truncate">' + escapeHTML(longest.name || '') + '</div>' +
+      (climb && climb.total_elevation_gain ? '<div class="w-stats"><div><div class="w-stat-v">' + Math.round(climb.total_elevation_gain * 3.281).toLocaleString() + ' ft</div><div class="w-stat-l">Biggest climb day</div></div></div>' : '');
   },
 
   'card-dashboard-events': function() {
@@ -4822,6 +4943,18 @@ function widgetSummaryFor(card) {
   if (big && big.textContent.trim()) return big.textContent.trim();
   const rows = card.querySelectorAll('.row').length;
   if (rows) return rows + ' <span style="font-size:11px;color:#7d8590">' + (rows === 1 ? 'entry' : 'entries') + '</span>';
+
+  // Last resort before giving up: the card's own first line of text. A
+  // card with no metric still usually opens with something meaningful
+  // ("Set a threshold pace to see an estimate"), which beats "View".
+  const body = card.cloneNode(true);
+  const t = body.querySelector('.card-title');
+  if (t) t.remove();
+  const text = (body.textContent || '').replace(/\s+/g, ' ').trim();
+  if (text.length > 3) {
+    return '<span style="font-size:12.5px;color:#7d8590;font-weight:400;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
+           escapeHTML(text.slice(0, 90)) + (text.length > 90 ? '…' : '') + '</span>';
+  }
   return '';
 }
 
@@ -4846,11 +4979,12 @@ function buildWidgets(sectionName) {
   }
   sec.classList.add('has-widgets');
 
-  // The hero leads the grid regardless of where its card sits in the DOM:
-  // training status is what the screen is for, so it shouldn't appear
-  // below whatever card happens to be first in source order.
+  // Explicit order and sizing per section, rather than following DOM order.
+  // Anything not listed keeps its source order after the listed ones.
+  const order = WIDGET_ORDER[sectionName] || [];
   cards.sort(function(a, b) {
-    return (b.id === 'today-focus-card') - (a.id === 'today-focus-card');
+    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
   });
 
   const tiles = cards.map(function(card, i) {
@@ -4868,7 +5002,9 @@ function buildWidgets(sectionName) {
     }
     const body = rich || '<div class="widget-value' + (widgetSummaryFor(card) ? '' : ' empty') + '">' +
                  (widgetSummaryFor(card) || 'View') + '</div>';
-    const cls = 'widget' + (rich ? ' rich' : '') + (card.id === 'today-focus-card' ? ' hero' : '');
+    const full = (WIDGET_FULLWIDTH[sectionName] === '*') ||
+                 ((WIDGET_FULLWIDTH[sectionName] || []).indexOf(card.id) >= 0);
+    const cls = 'widget' + (rich ? ' rich' : '') + (full ? ' hero' : '');
     return '<button class="' + cls + '" onclick="openDetail(\'' + sectionName + '\',\'' + card.id + '\')">' +
       '<div class="widget-top">' + svg + '<span class="widget-name">' + escapeHTML(name) + '</span>' +
       '<span class="widget-chev">&rsaquo;</span></div>' + body +
