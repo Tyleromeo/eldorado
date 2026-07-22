@@ -41,17 +41,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 body.native-app .nav { display: none !important; }
 body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 
-/* STRAVA ATTRIBUTION — required by Strava's API brand guidelines
-   (developers.strava.com/guidelines): any app built on their API must show
-   "Powered by Strava", and must link back to source data using the exact
-   text "View on Strava". The mark must never appear more prominently than
-   our own branding, which is why this is a quiet footer rather than a
-   header element. #FC5200 is Strava's specified orange. */
-.strava-attrib { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 1.75rem 0 0.75rem; font-size: 12px; color: #7d8590; }
-.strava-attrib svg { width: 13px; height: 13px; fill: #FC5200; flex-shrink: 0; }
-.strava-attrib b { color: #FC5200; font-weight: 600; }
-.strava-attrib a { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 7px; }
-.strava-attrib a:hover b { text-decoration: underline; }
+/* STRAVA BRANDING — see developers.strava.com/guidelines. "Powered by
+   Strava" is OPTIONAL ("apps that CHOOSE to display..."), so it appears
+   once, at the foot of Settings. What IS required: the official Connect
+   with Strava button (used unmodified), the exact text "View on Strava"
+   on links back to Strava data, and never showing their marks more
+   prominently than our own. */
 .view-on-strava { color: #FC5200; font-weight: 600; text-decoration: none; font-size: 11px; }
 .view-on-strava:hover { text-decoration: underline; }
 
@@ -1174,16 +1169,20 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <button onclick="disconnectStrava()" style="background:#2d1a1a;border:1px solid #f85149;border-radius:6px;padding:6px 14px;color:#f85149;cursor:pointer;font-size:13px">Disconnect</button>
     </div>
   </div>
-</div>
-
-<!-- Strava attribution. Required on every screen by Strava's API brand
-     guidelines; sits inside .container after all sections so it renders on
-     every tab, in the browser and inside the iOS app's web view alike. -->
-<div class="strava-attrib">
-  <a href="https://www.strava.com" target="_blank" rel="noopener noreferrer">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
-    <span>Powered by <b>Strava</b></span>
-  </a>
+  <!-- "Powered by Strava" is OPTIONAL under Strava's brand guidelines
+       ("all apps that CHOOSE to display..."), so it appears exactly once,
+       here at the foot of Settings - the least-trafficked screen. What the
+       guidelines do require is honoured: the official logo used unmodified
+       (never redrawn as inline SVG), kept far less prominent than the
+       Palmares wordmark, and never implying Strava built or sponsors this
+       app. The mandatory items live elsewhere: the official Connect with
+       Strava button on the login screen, and "View on Strava" on every
+       link back to Strava data. -->
+  <div style="display:flex;justify-content:center;padding:18px 0 4px">
+    <a href="https://www.strava.com" target="_blank" rel="noopener noreferrer" aria-label="Powered by Strava">
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzY1IiBoZWlnaHQ9IjM3IiB2aWV3Qm94PSIwIDAgMzY1IDM3IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNMC45MDUwMjkgMzUuMTU3N0gzLjMxNTIzVjI5LjA1MDNINy4zNDAwM0MxMC44MjY2IDI5LjA1MDMgMTIuODg1OCAyNy4xMzE1IDEyLjg4NTggMjMuOTI1N0MxMi44ODU4IDIwLjc0MzMgMTAuODI2NiAxOC43Nzc3IDcuMzYzNDMgMTguNzc3N0gwLjkwNTAyOVYzNS4xNTc3Wk0zLjMxNTIzIDI2LjgwMzlWMjEuMDI0MUg3LjI2OTgzQzkuNDIyNjMgMjEuMDI0MSAxMC40NzU2IDIxLjk2MDEgMTAuNDc1NiAyMy45MjU3QzEwLjQ3NTYgMjUuODQ0NSA5LjM5OTIzIDI2LjgwMzkgNy4yNDY0MyAyNi44MDM5SDMuMzE1MjNaTTIzLjY3ODcgMzUuNTA4N0MyNy44OTA3IDM1LjUwODcgMzAuNjc1MyAzMi4xMTU3IDMwLjY3NTMgMjYuOTY3N0MzMC42NzUzIDIxLjgxOTcgMjcuODkwNyAxOC40MjY3IDIzLjY3ODcgMTguNDI2N0MxOS40NjY3IDE4LjQyNjcgMTYuNzA1NSAyMS44MTk3IDE2LjcwNTUgMjYuOTY3N0MxNi43MDU1IDMyLjExNTcgMTkuNDY2NyAzNS41MDg3IDIzLjY3ODcgMzUuNTA4N1pNMjMuNjc4NyAzMy4yNjIzQzIwLjg0NzMgMzMuMjYyMyAxOS4xMTU3IDMwLjg3NTUgMTkuMTE1NyAyNi45Njc3QzE5LjExNTcgMjMuMDU5OSAyMC44NDczIDIwLjY3MzEgMjMuNjc4NyAyMC42NzMxQzI2LjUzMzUgMjAuNjczMSAyOC4yNjUxIDIzLjA1OTkgMjguMjY1MSAyNi45Njc3QzI4LjI2NTEgMzAuODc1NSAyNi41MzM1IDMzLjI2MjMgMjMuNjc4NyAzMy4yNjIzWk0zNy40NTYyIDM1LjE1NzdINDAuMjE3NEw0My45ODQ4IDIyLjU5MTlINDQuMDMxNkw0Ny43NzU2IDM1LjE1NzdINTAuNTYwMkw1My42OTU4IDE4Ljc3NzdINTEuMjM4OEw0OC44OTg4IDMxLjMyMDFINDguODUyTDQ1LjEzMTQgMTguNzc3N0g0Mi44NjE2TDM5LjE2NDQgMzEuMzIwMUgzOS4xMTc2TDM2Ljc3NzYgMTguNzc3N0gzNC4yOTcyTDM3LjQ1NjIgMzUuMTU3N1pNNTguMzM1NiAzNS4xNTc3SDY4LjM3NDJWMzIuOTExM0g2MC43NDU4VjI3LjgxMDFINjcuNzE5VjI1LjY1NzNINjAuNzQ1OFYyMS4wMjQxSDY4LjM3NDJWMTguNzc3N0g1OC4zMzU2VjM1LjE1NzdaTTgxLjYzMTQgMjguNTgyM0M4NC4wNDE2IDI4LjA0NDEgODUuNDY5IDI2LjI4OTEgODUuNDY5IDIzLjc2MTlDODUuNDY5IDIwLjY0OTcgODMuMzg2NCAxOC43Nzc3IDc5Ljk3IDE4Ljc3NzdINzMuNzkyNFYzNS4xNTc3SDc2LjIwMjZWMjguNzY5NUg3OS4wODA4TDgyLjQ1MDQgMzUuMTU3N0g4NS4xNjQ4TDgxLjYzMTQgMjguNjA1N1YyOC41ODIzWk03Ni4yMDI2IDI2LjU0NjVWMjEuMDI0MUg3OS43MzZDODEuOTM1NiAyMS4wMjQxIDgzLjA1ODggMjEuOTM2NyA4My4wNTg4IDIzLjc2MTlDODMuMDU4OCAyNS41ODcxIDgxLjkxMjIgMjYuNTQ2NSA3OS43MzYgMjYuNTQ2NUg3Ni4yMDI2Wk05MC40ODMyIDM1LjE1NzdIMTAwLjUyMlYzMi45MTEzSDkyLjg5MzRWMjcuODEwMUg5OS44NjY2VjI1LjY1NzNIOTIuODkzNFYyMS4wMjQxSDEwMC41MjJWMTguNzc3N0g5MC40ODMyVjM1LjE1NzdaTTEwNS45NCAzNS4xNTc3SDExMS4xMTFDMTE1LjQxNyAzNS4xNTc3IDExOC4yOTUgMzIuNTM2OSAxMTguMjk1IDI2Ljk0NDNDMTE4LjI5NSAyMS43OTYzIDExNS40MTcgMTguNzc3NyAxMTEuMjA1IDE4Ljc3NzdIMTA1Ljk0VjM1LjE1NzdaTTEwOC4zNSAzMi45MTEzVjIxLjAyNDFIMTExLjEzNUMxMTQuMDM2IDIxLjAyNDEgMTE1Ljg4NSAyMy4wMTMxIDExNS44ODUgMjYuOTQ0M0MxMTUuODg1IDMxLjIwMzEgMTE0LjAzNiAzMi45MTEzIDExMS4wMTggMzIuOTExM0gxMDguMzVaTTEzMi4wNTUgMzUuMTU3N0gxMzguMTE1QzE0MiAzNS4xNTc3IDE0NC4wMTIgMzMuNDcyOSAxNDQuMDEyIDMwLjI0MzdDMTQ0LjAxMiAyOC4zOTUxIDE0My4wNTMgMjYuOTY3NyAxNDEuNTc5IDI2LjM4MjdWMjYuMzM1OUMxNDIuNzAyIDI1Ljc3NDMgMTQzLjQwNCAyNC41ODA5IDE0My40MDQgMjMuMDU5OUMxNDMuNDA0IDIwLjUwOTMgMTQxLjQ2MiAxOC43Nzc3IDEzOC42MDcgMTguNzc3N0gxMzIuMDU1VjM1LjE1NzdaTTEzNC40NjUgMjUuNTg3MVYyMS4wMDA3SDEzOC4yMDlDMTQwLjAzNCAyMS4wMDA3IDE0MC45OTQgMjEuNzcyOSAxNDAuOTk0IDIzLjI3MDVDMTQwLjk5NCAyNC44MTQ5IDE0MC4wODEgMjUuNTg3MSAxMzguMjA5IDI1LjU4NzFIMTM0LjQ2NVpNMTM0LjQ2NSAzMi45MzQ3VjI3LjYyMjlIMTM4LjE2MkMxNDAuNTcyIDI3LjYyMjkgMTQxLjYwMiAyOC40MTg1IDE0MS42MDIgMzAuMjIwM0MxNDEuNjAyIDMyLjExNTcgMTQwLjU0OSAzMi45MzQ3IDEzOC4xMTUgMzIuOTM0N0gxMzQuNDY1Wk0xNTEuOTYzIDM1LjE1NzdIMTU0LjM3M1YyOC4zNzE3TDE2MC4wMTIgMTguNzc3N0gxNTcuMzIxTDE1My4xOCAyNi4xMjUzSDE1My4xMzNMMTQ4Ljk5MSAxOC43Nzc3SDE0Ni4zTDE1MS45NjMgMjguMzcxN1YzNS4xNTc3WiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yNzUuOTI1IDM1LjYwMDhMMjc1LjkyMyAzNS41OTkzSDI4Ni4wMDJMMjkyLjE5MyAyMy4xNTE0TDI5OC4zODMgMzUuNTk5M0gzMTAuNjNMMjkyLjE5MSAwTDI3NC42ODkgMzMuNzk2OEwyNjcuOTY5IDIzLjk4NDVDMjcyLjExOCAyMS45ODM2IDI3NC43MDQgMTguNTE4MSAyNzQuNzA0IDEzLjU0VjEzLjQ0MkMyNzQuNzA0IDkuOTI4NDkgMjczLjYzMSA3LjM5MDI3IDI3MS41ODEgNS4zNDAwOUMyNjkuMTg5IDIuOTQ4NjggMjY1LjMzNCAxLjQzNTc0IDI1OS4yODIgMS40MzU3NEgyNDIuNTlWMzUuNjAwOEgyNTQuMDExVjI1LjgzOTFIMjU2LjQ1MUwyNjIuODkzIDM1LjYwMDhIMjc1LjkyNVpNMzQ2LjM1MyAwTDMyNy45MTcgMzUuNTk5M0gzNDAuMTY0TDM0Ni4zNTQgMjMuMTUxNEwzNTIuNTQ1IDM1LjU5OTNIMzY0Ljc5MUwzNDYuMzUzIDBaTTMxOS4yODMgMzdMMzM3LjcxOSAxLjQwMDcxSDMyNS40NzNMMzE5LjI4MiAxMy44NDg2TDMxMy4wOTEgMS40MDA3MUgzMDAuODQ1TDMxOS4yODMgMzdaTTI1OC45NCAxNy42ODg1QzI2MS42NzMgMTcuNjg4NSAyNjMuMzMzIDE2LjQ2ODQgMjYzLjMzMyAxNC4zNjk4VjE0LjI3MThDMjYzLjMzMyAxMi4wNzU2IDI2MS42MjQgMTEuMDAxOSAyNTguOTg5IDExLjAwMTlIMjU0LjAxVjE3LjY4ODVIMjU4Ljk0Wk0yMTguMTY1IDExLjA5OTRIMjA4LjExMlYxLjQzNTc0SDIzOS42NFYxMS4wOTk0SDIyOS41ODdWMzUuNjAwOEgyMTguMTY1VjExLjA5OTRaTTE4MC4yODIgMjMuMjAzN0wxNzQuMTgxIDMwLjQ3NkMxNzguNTI1IDM0LjI4MzUgMTg0Ljc3MiAzNi4yMzUzIDE5MS43MDMgMzYuMjM1M0MyMDAuODc5IDM2LjIzNTMgMjA2Ljc4NCAzMS44NDI1IDIwNi43ODQgMjQuNjY3NVYyNC41NzAzQzIwNi43ODQgMTcuNjg4NSAyMDAuOTI4IDE1LjE1MDIgMTkyLjE5MSAxMy41NDAxQzE4OC41NzkgMTIuODU2IDE4Ny42NTIgMTIuMjcxMiAxODcuNjUyIDExLjM0MzVWMTEuMjQ1OUMxODcuNjUyIDEwLjQxNjIgMTg4LjQzMyA5LjgzMDU2IDE5MC4xNDEgOS44MzA1NkMxOTMuMzEzIDkuODMwNTYgMTk3LjE3IDEwLjg1NTQgMjAwLjM5IDEzLjE5ODFMMjA1Ljk1NSA1LjQ4Njk3QzIwMi4wMDEgMi4zNjMwOSAxOTcuMTIxIDAuODAwOTU5IDE5MC41MzIgMC44MDA5NTlDMTgxLjExMSAwLjgwMDk1OSAxNzYuMDM2IDUuODI4NiAxNzYuMDM2IDEyLjMxOTZWMTIuNDE3NkMxNzYuMDM2IDE5LjY0MDYgMTgyLjc3MiAyMS44Mzc2IDE5MC40MzQgMjMuMzk4NkMxOTQuMDk1IDI0LjEzMSAxOTUuMTY4IDI0LjY2NzUgMTk1LjE2OCAyNS42NDRWMjUuNzQyQzE5NS4xNjggMjYuNjY4OSAxOTQuMjkgMjcuMjA1MyAxOTIuMjQgMjcuMjA1M0MxODguMjM4IDI3LjIwNTMgMTgzLjk5MiAyNi4wMzQ4IDE4MC4yODIgMjMuMjAzN1oiIGZpbGw9IndoaXRlIi8+Cjwvc3ZnPgo=" alt="Powered by Strava" style="height:20px;width:auto;opacity:0.5" />
+    </a>
+  </div>
 </div>
 
 <!-- TOAST -->
