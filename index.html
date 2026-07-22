@@ -196,7 +196,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
    too. Each panel is a fixed-height pane that scrolls internally, so the dots
    and the card you're on stay put no matter how long the content is. */
 .swipe-deck-wrap { margin-top: 0.5rem; }
-.swipe-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 10px; }
+.swipe-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .swipe-nav button { background: transparent; border: 1px solid #30363d; border-radius: 8px; width: 34px; height: 34px; color: #7d8590; cursor: pointer; font-size: 17px; line-height: 1; flex-shrink: 0; }
 .swipe-nav button:hover { color: #e6edf3; border-color: #444c56; }
 .swipe-nav button:disabled { opacity: 0.35; cursor: default; }
@@ -791,7 +791,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   <div class="swipe-deck-wrap">
     <div class="swipe-nav">
       <button type="button" id="log-prev" onclick="logDeckGo(-1)" aria-label="Previous card">‹</button>
-      <div class="swipe-nav-label"><span id="log-deck-title">Training calendar</span><span class="swipe-count" id="log-deck-count">1 / 5</span></div>
       <button type="button" id="log-next" onclick="logDeckGo(1)" aria-label="Next card">›</button>
     </div>
     <div class="swipe-deck" id="log-deck" onscroll="logDeckOnScroll()">
