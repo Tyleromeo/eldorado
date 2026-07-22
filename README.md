@@ -1,6 +1,6 @@
 # Palmarès
 
-*The work behind your records.*
+*Your training. Your records.*
 
 A personal training-intelligence dashboard for cyclists, built on the Strava API.
 It pulls your full activity history and turns it into power analysis, KOM and
@@ -15,6 +15,15 @@ application JavaScript. There is no build step, no bundler, and no
 
 `privacy.html` is the privacy policy that the Strava API terms require a
 registered application to publish.
+
+`PalmaresApp/` is the Xcode project for the iOS app — a WKWebView wrapper
+around this same page, plus a home screen widget. `ios/` holds reference
+copies of its Swift files, and `docs/` covers server-side setup.
+
+**Before editing, read [CONTRIBUTING.md](CONTRIBUTING.md).** This project is
+worked on from two machines and has no build or test suite; that file covers
+the sync workflow, how to verify a change, and the deliberate decisions that
+shouldn't be undone.
 
 ## The five sections
 
