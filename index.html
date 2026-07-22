@@ -184,6 +184,10 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 @media(min-width:901px) {
   .widget-grid, .detail-bar { display: none !important; }
 }
+/* Sync lives on the tile grid, not inside a drilled-in card - the back bar
+   already occupies that corner and a second control there reads as clutter.
+   Pull-to-refresh still works in the detail view. */
+.section.detail-mode #sync-now-btn { display: none !important; }
 
 /* Swipeable strips: metric rows become one-handed horizontal carousels on
    phones rather than a 2x2 block that pushes everything else down. */
@@ -511,7 +515,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   <div class="card" id="today-wx-card">
     <div class="card-title">
       <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>Weather</div>
-      <a href="#" class="ext-link" onclick="showSection('map');return false" style="color:#C9A227">Full forecast ›</a>
+      <a href="#" class="ext-link" onclick="goToCard('map','wx-forecast-card');return false" style="color:#C9A227">Full forecast ›</a>
     </div>
     <div id="today-wx-body" style="font-size:13px;color:#7d8590">Loading conditions...</div>
   </div>
@@ -522,6 +526,13 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <a href="#" class="ext-link" onclick="showSection('segments');return false" style="color:#C9A227">All segments ›</a>
     </div>
     <div id="today-opportunity-body" style="font-size:13px;color:#7d8590">Loading...</div>
+  </div>
+
+  <div class="card" id="collapse-streaks">
+    <div class="card-title collapse-head" onclick="toggleCollapse('streaks')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>Streaks</div></div>
+    <div class="collapse-body">
+      <div class="g2" id="streak-cards" style="margin-bottom:0"></div>
+    </div>
   </div>
 
   <div class="card" id="card-dashboard-events" style="margin-top:1.5rem">
@@ -802,12 +813,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
-  <div class="card" id="collapse-streaks">
-    <div class="card-title collapse-head" onclick="toggleCollapse('streaks')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>Streaks</div></div>
-    <div class="collapse-body">
-      <div class="g2" id="streak-cards" style="margin-bottom:0"></div>
-    </div>
-  </div>
 
 
   <div class="card" id="collapse-crew" style="margin-top:2rem">
@@ -1080,8 +1085,16 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
-  <div style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #21262d">
-    <div class="section-header"><h2>Weather forecast</h2><p>7-day outlook for Smithtown, NY with wind analysis for ride planning.</p></div>
+  <!-- A real .card, not a bare div: the phone layout builds its tile grid
+       from cards, so as a plain wrapper this whole forecast generated no
+       widget AND got hidden by .has-widgets - the 7-day forecast was
+       unreachable on a phone, including from the dashboard's
+       "Full forecast" link. -->
+  <div class="card" id="wx-forecast-card" style="margin-top:2rem">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>Weather forecast</div>
+      <span style="font-size:12px;color:#7d8590">7-day</span>
+    </div>
     <div id="wx-loading" style="font-size:13px;color:#7d8590;padding:1rem 0">Loading forecast...</div>
     <div id="wx-content" style="display:none">
       <div id="wx-alerts" style="margin-bottom:1rem"></div>
@@ -4697,7 +4710,7 @@ function wWeeklyMiles(weeks) {
 // charts and tables, which are unreadable squeezed into a half-width tile.
 const WIDGET_ORDER = {
   dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card',
-              'today-opportunity-card', 'card-dashboard-events']
+              'today-opportunity-card', 'card-dashboard-events', 'collapse-streaks']
 };
 const WIDGET_FULLWIDTH = {
   dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card'],
@@ -4724,14 +4737,23 @@ const WIDGET_RENDERERS = {
       const isNow = i === weeks.length - 1;
       return '<div class="w-bar" style="height:' + h + 'px;background:' + (isNow ? '#C9A227' : '#30363d') + '" title="' + mi + ' mi"></div>';
     }).join('');
-    return '<div class="w-head"><span class="w-big" style="color:' + color + '">' + (m.tsb >= 0 ? '+' : '') + m.tsb + '</span>' +
-        '<span class="w-cap" style="color:' + color + '">' + label + '</span></div>' +
-      '<div class="w-sub">' + advice + '</div>' +
-      '<div class="w-stats">' +
-        '<div><div class="w-stat-v">' + m.ctl + ' <span style="font-size:11px;color:' + (delta >= 0 ? '#3fb950' : '#f85149') + '">' + (delta >= 0 ? '+' : '') + delta + '</span></div><div class="w-stat-l">Fitness</div></div>' +
-        '<div><div class="w-stat-v">' + m.atl + '</div><div class="w-stat-l">Fatigue</div></div>' +
-        '<div style="flex:1;min-width:90px"><div class="w-bars">' + bars + '</div><div class="w-stat-l" style="margin-top:3px">Last 4 weeks</div></div>' +
-      '</div>';
+    // Fitness, fatigue and form carry equal weight - they're read together,
+    // and blowing one up to 30px while the other two sat in 14px footnotes
+    // implied a hierarchy that isn't there.
+    const triple = [
+      { v: m.ctl, l: 'Fitness', c: '#e6edf3',
+        extra: ' <span style="font-size:12px;color:' + (delta >= 0 ? '#3fb950' : '#f85149') + '">' + (delta >= 0 ? '+' : '') + delta + '</span>' },
+      { v: m.atl, l: 'Fatigue', c: '#e6edf3', extra: '' },
+      { v: (m.tsb >= 0 ? '+' : '') + m.tsb, l: 'Form &middot; ' + label, c: color, extra: '' }
+    ].map(function(x) {
+      return '<div style="flex:1;min-width:74px">' +
+        '<div style="font-size:25px;font-weight:700;line-height:1.05;color:' + x.c + '">' + x.v + x.extra + '</div>' +
+        '<div class="w-stat-l">' + x.l + '</div></div>';
+    }).join('');
+
+    return '<div style="display:flex;gap:12px;flex-wrap:wrap">' + triple + '</div>' +
+      '<div class="w-sub" style="margin-top:8px">' + advice + '</div>' +
+      '<div class="w-bars">' + bars + '</div><div class="w-stat-l" style="margin-top:3px">Weekly volume, last 4 weeks</div>';
   },
 
   // Full width, and shows the whole picture: today's conditions plus the
@@ -4794,12 +4816,37 @@ const WIDGET_RENDERERS = {
     const a = allActivities[0];
     const mi = (a.distance / 1609.34).toFixed(1);
     const h = Math.floor(a.moving_time / 3600), mm = Math.floor((a.moving_time % 3600) / 60);
-    return '<div class="w-head"><span class="w-big sm">' + mi + '</span><span class="w-cap">mi &middot; ' + (h ? h + 'h ' + mm + 'm' : mm + 'm') + '</span></div>' +
+    const sport = activitySportKey(a);
+    const isFoot = sport === 'run' || sport === 'trailrun' || sport === 'walk' || sport === 'hike';
+    // Runners think in pace, riders in speed - show whichever the sport
+    // actually uses rather than one number for everything.
+    let paceStat = '';
+    if (a.average_speed > 0) {
+      if (isFoot) {
+        const sec = 1609.34 / a.average_speed;
+        paceStat = '<div><div class="w-stat-v">' + Math.floor(sec / 60) + ':' + String(Math.round(sec % 60)).padStart(2, '0') +
+          '</div><div class="w-stat-l">Pace /mi</div></div>';
+      } else {
+        paceStat = '<div><div class="w-stat-v">' + (a.average_speed * 2.23694).toFixed(1) +
+          '</div><div class="w-stat-l">Avg mph</div></div>';
+      }
+    }
+    return '<div class="w-head"><span class="w-big sm">' + mi + '</span><span class="w-cap">mi &middot; ' + (h ? h + 'h ' + mm + 'm' : mm + 'm') + '</span>' +
+        '<span class="w-cap" style="color:#C9A227">' + escapeHTML(activityTypeLabel(a.sport_type || a.type)) + '</span></div>' +
       '<div class="w-sub w-truncate w-strong">' + escapeHTML(a.name || 'Untitled') + '</div>' +
       '<div class="w-stats"><div><div class="w-stat-v">' + wFmtDate(a.start_date) + '</div><div class="w-stat-l">When</div></div>' +
-        (a.total_elevation_gain ? '<div><div class="w-stat-v">' + Math.round(a.total_elevation_gain * 3.281).toLocaleString() + '</div><div class="w-stat-l">Ft climbed</div></div>' : '') +
+        paceStat +
         (a.average_watts ? '<div><div class="w-stat-v">' + Math.round(a.average_watts) + 'w</div><div class="w-stat-l">Avg power</div></div>' : '') +
+        (a.average_heartrate ? '<div><div class="w-stat-v">' + Math.round(a.average_heartrate) + '</div><div class="w-stat-l">Avg bpm</div></div>' : '') +
       '</div>';
+  },
+
+  'collapse-streaks': function() {
+    if (!allActivities.length) return null;
+    const daily = calcDailyStreak(), weekly = calcWeeklyStreak();
+    return '<div class="w-head"><span class="w-big">' + daily + '</span><span class="w-cap">day streak</span></div>' +
+      '<div class="w-sub">' + (daily >= 14 ? '🔥 On a tear' : daily >= 7 ? '⚡ Building' : daily > 0 ? 'Keep it going' : 'Rest day') + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + weekly + '</div><div class="w-stat-l">Week streak</div></div></div>';
   },
 
   // ---- Train page ----
@@ -4916,15 +4963,8 @@ function widgetExtras(sectionName) {
     target: 'today-focus-card'
   });
 
-  out.push({
-    id: 'card-dashboard-streak',
-    name: 'Streaks',
-    svg: '<svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
-    body: '<div class="w-head"><span class="w-big">' + daily + '</span><span class="w-cap">day' + (daily === 1 ? '' : 's') + '</span></div>' +
-      '<div class="w-sub">' + (daily >= 14 ? '🔥 On a tear' : daily >= 7 ? '⚡ Building' : daily > 0 ? 'Keep it going' : 'Rest day') + '</div>' +
-      '<div class="w-stats"><div><div class="w-stat-v">' + weekly + '</div><div class="w-stat-l">Week streak</div></div></div>',
-    target: null
-  });
+  // Streaks are no longer synthesised here - they have a real card on the
+  // dashboard now, so the tile drills into it like any other.
   return out;
 }
 
@@ -5048,6 +5088,24 @@ function openDetail(sectionName, cardId) {
   if (card.querySelector('#palmares-map')) {
     setTimeout(function(){ try { renderPalmaresMap(); } catch(e) {} }, 60);
   }
+}
+
+// Jump straight to one card on another page. On a phone that means opening
+// its detail view, otherwise a cross-page link like "Full forecast" lands
+// on that section's tile grid and the user has to hunt for the card they
+// just asked for. On desktop there is no detail mode, so scroll to it.
+function goToCard(sectionName, cardId) {
+  showSection(sectionName);
+  setTimeout(function() {
+    const sec = document.getElementById('section-' + sectionName);
+    const card = document.getElementById(cardId);
+    if (!sec || !card) return;
+    if (sec.classList.contains('has-widgets') && window.matchMedia('(max-width:900px)').matches) {
+      openDetail(sectionName, cardId);
+    } else {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 120);
 }
 
 function closeDetail(sectionName) {
