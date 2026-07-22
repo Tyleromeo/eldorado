@@ -123,10 +123,33 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .widget:active { transform: scale(0.985); }
 .widget-top { display: flex; align-items: center; gap: 8px; }
 .widget-top svg { width: 15px; height: 15px; stroke: #C9A227; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.widget-name { font-size: 12px; color: #7d8590; font-weight: 500; line-height: 1.25; }
+/* Two lines max: a three-line title shoved the actual data down the tile
+   and made rows in the same grid track wildly different heights. */
+.widget-name { font-size: 12px; color: #7d8590; font-weight: 500; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .widget-value { font-size: 22px; font-weight: 600; color: #e6edf3; line-height: 1.1; margin-top: auto; }
 .widget-value.empty { font-size: 13px; color: #57606a; font-weight: 400; }
 .widget-chev { margin-left: auto; color: #57606a; font-size: 15px; line-height: 1; }
+
+/* A widget has to be worth reading without tapping it. These are the parts
+   a rich widget body is built from: a headline figure with a caption, a
+   couple of secondary stats, and small inline bars. A tile using them says
+   something on its own; the chevron is then an offer, not a requirement. */
+.widget.rich { min-height: 132px; }
+.widget.hero { grid-column: 1 / -1; min-height: 0; }
+.w-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.w-big { font-size: 30px; font-weight: 700; line-height: 1; color: #e6edf3; }
+.w-big.sm { font-size: 23px; }
+.w-cap { font-size: 12px; color: #7d8590; }
+.w-sub { font-size: 11.5px; color: #7d8590; line-height: 1.35; }
+.w-strong { color: #e6edf3; }
+.w-stats { display: flex; gap: 14px; margin-top: auto; flex-wrap: wrap; }
+.w-stat-v { font-size: 14px; font-weight: 600; color: #e6edf3; line-height: 1.1; }
+.w-stat-l { font-size: 10.5px; color: #7d8590; text-transform: uppercase; letter-spacing: .04em; }
+.w-bars { display: flex; align-items: flex-end; gap: 4px; height: 30px; margin-top: 8px; }
+.w-bar { flex: 1; background: #30363d; border-radius: 2px; min-height: 3px; }
+.w-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #e6edf3; }
+.w-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.w-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Detail mode: one card, full width, with a back bar. */
 .detail-bar { display: none; align-items: center; gap: 10px; margin-bottom: 1rem; }
@@ -134,15 +157,23 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .detail-back:hover { border-color: #C9A227; }
 .detail-title { font-size: 15px; font-weight: 600; color: #e6edf3; }
 
-/* Once a page has widgets, its content is hidden by default - the grid IS
-   the page. Cards only appear when drilled into. Without this the widgets
-   just add another block above the same endless scroll. */
-.section.has-widgets > *:not(.section-header):not(.widget-grid):not(.detail-bar) { display: none; }
-.section.has-widgets.detail-mode .widget-grid { display: none; }
-.section.has-widgets.detail-mode .detail-bar { display: flex; }
-.section.has-widgets.detail-mode .section-header { display: none; }
-.section.has-widgets .detail-open { display: block !important; }
-.section.has-widgets .g2.detail-open, .section.has-widgets .g3.detail-open, .section.has-widgets .g4.detail-open { grid-template-columns: 1fr; }
+/* Widgets are a PHONE layout, not the site layout. On a phone (and inside
+   the iOS app) screen space is scarce, so the grid IS the page and cards
+   open one at a time. On a desktop browser there is room for everything at
+   once, so the grid is hidden and the full cards stay visible - scrolling a
+   wide window is cheap, and drilling into one card at a time there would
+   only add clicks. Same markup, same data, layout chosen by viewport. */
+@media(max-width:900px) {
+  .section.has-widgets > *:not(.section-header):not(.widget-grid):not(.detail-bar) { display: none; }
+  .section.has-widgets.detail-mode .widget-grid { display: none; }
+  .section.has-widgets.detail-mode .detail-bar { display: flex; }
+  .section.has-widgets.detail-mode .section-header { display: none; }
+  .section.has-widgets .detail-open { display: block !important; }
+  .section.has-widgets .g2.detail-open, .section.has-widgets .g3.detail-open, .section.has-widgets .g4.detail-open { grid-template-columns: 1fr; }
+}
+@media(min-width:901px) {
+  .widget-grid, .detail-bar { display: none !important; }
+}
 
 /* Swipeable strips: metric rows become one-handed horizontal carousels on
    phones rather than a 2x2 block that pushes everything else down. */
@@ -150,6 +181,12 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   .widget-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .widget { min-height: 92px; padding: 0.8rem 0.85rem; }
   .widget-value { font-size: 19px; }
+  /* Rich tiles keep their headline legible at phone width; the hero spans
+     both columns so its trend bars have room to read. */
+  .widget.rich { min-height: 124px; }
+  .w-big { font-size: 26px; }
+  .w-big.sm { font-size: 20px; }
+  .w-stats { gap: 12px; }
   .g4.swipe-strip, .g3.swipe-strip {
     display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch; gap: 10px; padding-bottom: 4px;
@@ -446,11 +483,19 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div id="last-activity-body"></div>
   </div>
 
-  <div class="g4">
-    <div class="metric"><div class="metric-label">Fitness (CTL)</div><div class="metric-val" id="ctl-val">--</div><div class="metric-sub" id="ctl-trend"></div></div>
-    <div class="metric"><div class="metric-label">Fatigue (ATL)</div><div class="metric-val" id="atl-val">--</div><div class="metric-sub" id="atl-sub"></div></div>
-    <div class="metric"><div class="metric-label">Form (TSB)</div><div class="metric-val" id="tsb-val">--</div><div class="metric-sub" id="tsb-label"></div></div>
-    <div class="metric"><div class="metric-label">This week</div><div class="metric-val" id="week-mi">--</div><div class="metric-sub" id="week-acts"></div></div>
+  <!-- Training status. A real card so the phone layout can render it as the
+       full-width "In Focus" hero widget and drill into it; on desktop it
+       just reads as the metric strip it has always been. -->
+  <div class="card" id="today-focus-card">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Training status</div>
+    </div>
+    <div class="g4">
+      <div class="metric"><div class="metric-label">Fitness (CTL)</div><div class="metric-val" id="ctl-val">--</div><div class="metric-sub" id="ctl-trend"></div></div>
+      <div class="metric"><div class="metric-label">Fatigue (ATL)</div><div class="metric-val" id="atl-val">--</div><div class="metric-sub" id="atl-sub"></div></div>
+      <div class="metric"><div class="metric-label">Form (TSB)</div><div class="metric-val" id="tsb-val">--</div><div class="metric-sub" id="tsb-label"></div></div>
+      <div class="metric"><div class="metric-label">This week</div><div class="metric-val" id="week-mi">--</div><div class="metric-sub" id="week-acts"></div></div>
+    </div>
   </div>
 
   <div class="card" id="today-wx-card">
@@ -469,7 +514,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div id="today-opportunity-body" style="font-size:13px;color:#7d8590">Loading...</div>
   </div>
 
-  <div class="card" style="margin-top:1.5rem">
+  <div class="card" id="card-dashboard-events" style="margin-top:1.5rem">
     <div class="card-title">
       <div class="card-title-left">
         <svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -4602,6 +4647,166 @@ function sectionCards(sec) {
   return out;
 }
 
+// ---- Rich widget bodies -------------------------------------------------
+// Scraping a card for one number produced tiles that mostly said "View" or
+// a bare digit - you had to tap every one to learn anything, which defeats
+// the point of a glance screen. These renderers read the app's own state
+// instead and return a body worth reading on its own: a headline figure,
+// supporting stats, and where it helps, small inline bars. Keyed by card
+// id; any card without one still falls back to the generic scrape below.
+
+function wFmtDate(d) {
+  const now = new Date(), day = 86400000;
+  const cal = Math.round((new Date().setHours(0,0,0,0) - new Date(d).setHours(0,0,0,0)) / day);
+  if (cal === 0) return 'today';
+  if (cal === 1) return 'yesterday';
+  if (cal < 7) return cal + 'd ago';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Weekly mileage for the last N weeks, oldest first - the hero's trend bars.
+function wWeeklyMiles(weeks) {
+  const out = [];
+  const now = new Date();
+  const monday = new Date(now);
+  { const d = now.getDay(); monday.setDate(now.getDate() - (d === 0 ? 6 : d - 1)); }
+  monday.setHours(0, 0, 0, 0);
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(monday); start.setDate(start.getDate() - i * 7);
+    const end = new Date(start); end.setDate(end.getDate() + 7);
+    const mi = allActivities
+      .filter(a => { const t = new Date(a.start_date); return t >= start && t < end; })
+      .reduce((s, a) => s + a.distance, 0) / 1609.34;
+    out.push(Math.round(mi));
+  }
+  return out;
+}
+
+const WIDGET_RENDERERS = {
+  // In Focus: form is the number that should drive today's decision, so it
+  // leads, with the load that produced it and four weeks of volume behind.
+  'today-focus-card': function() {
+    if (!allActivities.length) return null;
+    const m = computeMetrics(allActivities);
+    const color = m.tsb > 5 ? '#3fb950' : m.tsb > -10 ? '#e6edf3' : m.tsb > -30 ? '#d29922' : '#f85149';
+    const label = m.tsb > 5 ? 'Fresh' : m.tsb > -10 ? 'Neutral' : m.tsb > -30 ? 'Tired' : 'Very fatigued';
+    const advice = m.tsb > 10 ? 'Good day to target something'
+      : m.tsb > 5 ? 'Legs are available'
+      : m.tsb > -10 ? 'Train normally'
+      : m.tsb > -30 ? 'Keep it aerobic' : 'Rest or Z1 only';
+    const weeks = wWeeklyMiles(4);
+    const peak = Math.max.apply(null, weeks.concat([1]));
+    const delta = m.ctl - m.prevCtl;
+    const bars = weeks.map(function(mi, i) {
+      const h = Math.max(3, Math.round((mi / peak) * 30));
+      const isNow = i === weeks.length - 1;
+      return '<div class="w-bar" style="height:' + h + 'px;background:' + (isNow ? '#C9A227' : '#30363d') + '" title="' + mi + ' mi"></div>';
+    }).join('');
+    return '<div class="w-head"><span class="w-big" style="color:' + color + '">' + (m.tsb >= 0 ? '+' : '') + m.tsb + '</span>' +
+        '<span class="w-cap" style="color:' + color + '">' + label + '</span></div>' +
+      '<div class="w-sub">' + advice + '</div>' +
+      '<div class="w-stats">' +
+        '<div><div class="w-stat-v">' + m.ctl + ' <span style="font-size:11px;color:' + (delta >= 0 ? '#3fb950' : '#f85149') + '">' + (delta >= 0 ? '+' : '') + delta + '</span></div><div class="w-stat-l">Fitness</div></div>' +
+        '<div><div class="w-stat-v">' + m.atl + '</div><div class="w-stat-l">Fatigue</div></div>' +
+        '<div style="flex:1;min-width:90px"><div class="w-bars">' + bars + '</div><div class="w-stat-l" style="margin-top:3px">Last 4 weeks</div></div>' +
+      '</div>';
+  },
+
+  'today-wx-card': function() {
+    const d = window._wxData && window._wxData.daily;
+    if (!d) return null;
+    const wind = msToMph(d.windspeed_10m_max[0]);
+    const wc = wind > 20 ? '#f85149' : wind > 12 ? '#d29922' : '#3fb950';
+    return '<div class="w-head"><span style="font-size:24px">' + wxIcon(d.weathercode[0]) + '</span>' +
+        '<span class="w-big sm">' + Math.round(d.temperature_2m_max[0]) + '°</span>' +
+        '<span class="w-cap">/ ' + Math.round(d.temperature_2m_min[0]) + '°</span></div>' +
+      '<div class="w-sub w-truncate">' + escapeHTML(wxDesc(d.weathercode[0])) + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v" style="color:' + wc + '">' + windArrow(d.winddirection_10m_dominant[0]) + ' ' + wind + ' mph</div>' +
+        '<div class="w-stat-l">' + windDirName(d.winddirection_10m_dominant[0]) + ' wind</div></div>' +
+        (d.precipitation_probability_max && d.precipitation_probability_max[0] != null
+          ? '<div><div class="w-stat-v">' + Math.round(d.precipitation_probability_max[0]) + '%</div><div class="w-stat-l">Rain</div></div>' : '') +
+      '</div>';
+  },
+
+  'today-opportunity-card': function() {
+    const t = _widgetSnapshot.tailwind;
+    // Say what's happening instead of falling through to a bare "View":
+    // no tailwind pick is itself the answer, and the forecast may simply
+    // not have landed yet.
+    if (!t || !t.name) {
+      return '<div class="w-sub" style="margin-top:auto">' +
+        (window._wxData ? 'No standout tailwind segment nearby today.' : 'Waiting on today\'s forecast…') + '</div>';
+    }
+    const c = t.mph >= 10 ? '#3fb950' : t.mph >= 0 ? '#d29922' : '#f85149';
+    return '<div class="w-head"><span class="w-big sm" style="color:' + c + '">' + (t.mph >= 0 ? '+' : '') + t.mph + '</span><span class="w-cap">mph ' + (t.mph >= 0 ? 'tailwind' : 'headwind') + '</span></div>' +
+      '<div class="w-line w-truncate"><span class="w-dot" style="background:' + c + '"></span>' + escapeHTML(t.name) + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + (t.rank ? '#' + t.rank : '—') + '</div><div class="w-stat-l">Your rank</div></div>' +
+        (t.distanceMi ? '<div><div class="w-stat-v">' + t.distanceMi.toFixed(1) + ' mi</div><div class="w-stat-l">Length</div></div>' : '') +
+      '</div>';
+  },
+
+  'last-activity-card': function() {
+    if (!allActivities.length) return null;
+    const a = allActivities[0];
+    const mi = (a.distance / 1609.34).toFixed(1);
+    const h = Math.floor(a.moving_time / 3600), mm = Math.floor((a.moving_time % 3600) / 60);
+    return '<div class="w-head"><span class="w-big sm">' + mi + '</span><span class="w-cap">mi &middot; ' + (h ? h + 'h ' + mm + 'm' : mm + 'm') + '</span></div>' +
+      '<div class="w-sub w-truncate w-strong">' + escapeHTML(a.name || 'Untitled') + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + wFmtDate(a.start_date) + '</div><div class="w-stat-l">When</div></div>' +
+        (a.total_elevation_gain ? '<div><div class="w-stat-v">' + Math.round(a.total_elevation_gain * 3.281).toLocaleString() + '</div><div class="w-stat-l">Ft climbed</div></div>' : '') +
+        (a.average_watts ? '<div><div class="w-stat-v">' + Math.round(a.average_watts) + 'w</div><div class="w-stat-l">Avg power</div></div>' : '') +
+      '</div>';
+  },
+
+  'card-dashboard-events': function() {
+    const e = _widgetSnapshot.nextEvent;
+    if (!e || !e.date) return null;
+    const d = new Date(e.date);
+    const days = Math.ceil((d - new Date()) / 86400000);
+    const when = days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'in ' + days + 'd';
+    return '<div class="w-head"><span class="w-big sm" style="color:' + (days <= 1 ? '#C9A227' : '#e6edf3') + '">' + when + '</span></div>' +
+      '<div class="w-sub w-truncate w-strong">' + escapeHTML(e.title) + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</div>' +
+        '<div class="w-stat-l">' + escapeHTML(e.club || 'Club ride') + '</div></div></div>';
+  }
+};
+
+// Streak + weekly-volume widgets are generated from live state rather than a
+// specific card, so they are described here and injected into the grid.
+function widgetExtras(sectionName) {
+  if (sectionName !== 'dashboard' || !allActivities.length) return [];
+  const out = [];
+  const daily = calcDailyStreak(), weekly = calcWeeklyStreak();
+  const weeks = wWeeklyMiles(2);
+  const thisWk = weeks[1], lastWk = weeks[0];
+  const diff = lastWk > 0 ? Math.round(((thisWk - lastWk) / lastWk) * 100) : null;
+  const now = new Date();
+  const monday = new Date(now); { const d = now.getDay(); monday.setDate(now.getDate() - (d === 0 ? 6 : d - 1)); }
+  monday.setHours(0,0,0,0);
+  const acts = allActivities.filter(a => new Date(a.start_date) >= monday).length;
+
+  out.push({
+    id: 'card-dashboard-week',
+    name: 'This week',
+    svg: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    body: '<div class="w-head"><span class="w-big">' + thisWk + '</span><span class="w-cap">mi</span></div>' +
+      '<div class="w-sub">' + acts + ' activit' + (acts === 1 ? 'y' : 'ies') +
+        (diff !== null ? ' &middot; <span style="color:' + (diff >= 0 ? '#3fb950' : '#d29922') + '">' + (diff >= 0 ? '+' : '') + diff + '% vs last week</span>' : '') + '</div>',
+    target: 'today-focus-card'
+  });
+
+  out.push({
+    id: 'card-dashboard-streak',
+    name: 'Streaks',
+    svg: '<svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
+    body: '<div class="w-head"><span class="w-big">' + daily + '</span><span class="w-cap">day' + (daily === 1 ? '' : 's') + '</span></div>' +
+      '<div class="w-sub">' + (daily >= 14 ? '🔥 On a tear' : daily >= 7 ? '⚡ Building' : daily > 0 ? 'Keep it going' : 'Rest day') + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + weekly + '</div><div class="w-stat-l">Week streak</div></div></div>',
+    target: null
+  });
+  return out;
+}
+
 // Pull a glance value out of whatever the card already rendered, so the
 // tile shows a number rather than just a label. Falls back through the
 // shapes actually used in this app before giving up.
@@ -4641,18 +4846,47 @@ function buildWidgets(sectionName) {
   }
   sec.classList.add('has-widgets');
 
-  grid.innerHTML = cards.map(function(card, i) {
+  // The hero leads the grid regardless of where its card sits in the DOM:
+  // training status is what the screen is for, so it shouldn't appear
+  // below whatever card happens to be first in source order.
+  cards.sort(function(a, b) {
+    return (b.id === 'today-focus-card') - (a.id === 'today-focus-card');
+  });
+
+  const tiles = cards.map(function(card, i) {
     if (!card.id) card.id = 'card-' + sectionName + '-' + i;
     const titleEl = card.querySelector('.card-title-left');
     const svg = titleEl ? (titleEl.querySelector('svg') || {}).outerHTML || '' : '';
     const name = titleEl ? titleEl.textContent.replace(/[▼▶]/g, '').trim() : card.id;
-    const value = widgetSummaryFor(card);
-    return '<button class="widget" onclick="openDetail(\'' + sectionName + '\',\'' + card.id + '\')">' +
+
+    // Prefer a purpose-built body. If its data isn't loaded yet the renderer
+    // returns null and we fall back to the generic scrape, so a tile is
+    // never blank while the page is still filling in.
+    let rich = null;
+    if (WIDGET_RENDERERS[card.id]) {
+      try { rich = WIDGET_RENDERERS[card.id](); } catch (e) { rich = null; }
+    }
+    const body = rich || '<div class="widget-value' + (widgetSummaryFor(card) ? '' : ' empty') + '">' +
+                 (widgetSummaryFor(card) || 'View') + '</div>';
+    const cls = 'widget' + (rich ? ' rich' : '') + (card.id === 'today-focus-card' ? ' hero' : '');
+    return '<button class="' + cls + '" onclick="openDetail(\'' + sectionName + '\',\'' + card.id + '\')">' +
       '<div class="widget-top">' + svg + '<span class="widget-name">' + escapeHTML(name) + '</span>' +
-      '<span class="widget-chev">&rsaquo;</span></div>' +
-      '<div class="widget-value' + (value ? '' : ' empty') + '">' + (value || 'View') + '</div>' +
+      '<span class="widget-chev">&rsaquo;</span></div>' + body +
     '</button>';
-  }).join('');
+  });
+
+  // State-derived tiles (streaks, weekly volume) that have no card of their
+  // own. Those without a drill-down target are rendered inert rather than
+  // opening an empty detail view.
+  widgetExtras(sectionName).forEach(function(x) {
+    const onclick = x.target ? ' onclick="openDetail(\'' + sectionName + '\',\'' + x.target + '\')"' : '';
+    tiles.push('<button class="widget rich"' + onclick + (x.target ? '' : ' style="cursor:default"') + '>' +
+      '<div class="widget-top">' + x.svg + '<span class="widget-name">' + escapeHTML(x.name) + '</span>' +
+      (x.target ? '<span class="widget-chev">&rsaquo;</span>' : '') + '</div>' + x.body +
+    '</button>');
+  });
+
+  grid.innerHTML = tiles.join('');
 }
 
 function openDetail(sectionName, cardId) {
