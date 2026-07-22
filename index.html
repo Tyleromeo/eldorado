@@ -510,6 +510,29 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div class="metric"><div class="metric-label">Form (TSB)</div><div class="metric-val" id="tsb-val">--</div><div class="metric-sub" id="tsb-label"></div></div>
       <div class="metric"><div class="metric-label">This week</div><div class="metric-val" id="week-mi">--</div><div class="metric-sub" id="week-acts"></div></div>
     </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><select id="trend-range-select" onchange="setTrendRange(this.value)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#e6edf3;font-size:12px">
+        <option value="7">1 Week</option>
+        <option value="30" selected>1 Month</option>
+        <option value="60">2 Months</option>
+        <option value="84">3 Months</option>
+        <option value="168">6 Months</option>
+        <option value="365">1 Year</option>
+        <option value="ytd">Year to Date</option>
+      </select></div>
+    <div class="chart-wrap" style="height:240px"><canvas id="fitness-chart"></canvas></div>
+    <div class="chart-legend">
+      <div class="legend-item"><span class="legend-line" style="background:#FC4C02"></span>Fitness (CTL)</div>
+      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Fatigue (ATL)</div>
+    </div>
+    <div style="margin-top:1.25rem;font-size:13px;font-weight:600;color:#e6edf3">Form (TSB)</div>
+    <div class="chart-wrap" style="height:130px;margin-top:0.5rem"><canvas id="form-chart"></canvas></div>
+    <div class="chart-legend">
+      <div class="legend-item"><span class="legend-line" style="background:#3fb950"></span>Fresh (&gt;5)</div>
+      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Neutral</div>
+      <div class="legend-item"><span class="legend-line" style="background:#d29922"></span>Tired</div>
+      <div class="legend-item"><span class="legend-line" style="background:#f85149"></span>Very fatigued (&lt;-30)</div>
+    </div>
+
   </div>
 
   <div class="card" id="today-wx-card">
@@ -532,6 +555,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div class="card-title collapse-head" onclick="toggleCollapse('streaks')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>Streaks</div></div>
     <div class="collapse-body">
       <div class="g2" id="streak-cards" style="margin-bottom:0"></div>
+      <div id="streak-totals"></div>
     </div>
   </div>
 
@@ -554,34 +578,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 <div id="section-performance" class="section">
   <div class="section-header"><h2>Train</h2><p>Fitness trend, power curve, PRs, goals, zones, and coaching — your performance depth.</p></div>
 
-  <div class="card" id="fitness-trend-card">
-    <div class="card-title">
-      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Fitness trend</div>
-      <select id="trend-range-select" onchange="setTrendRange(this.value)" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;color:#e6edf3;font-size:12px">
-        <option value="7">1 Week</option>
-        <option value="30" selected>1 Month</option>
-        <option value="60">2 Months</option>
-        <option value="84">3 Months</option>
-        <option value="168">6 Months</option>
-        <option value="365">1 Year</option>
-        <option value="ytd">Year to Date</option>
-      </select>
-    </div>
-    <div class="chart-wrap" style="height:240px"><canvas id="fitness-chart"></canvas></div>
-    <div class="chart-legend">
-      <div class="legend-item"><span class="legend-line" style="background:#FC4C02"></span>Fitness (CTL)</div>
-      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Fatigue (ATL)</div>
-    </div>
-    <div style="margin-top:1.25rem;font-size:13px;font-weight:600;color:#e6edf3">Form (TSB)</div>
-    <div class="chart-wrap" style="height:130px;margin-top:0.5rem"><canvas id="form-chart"></canvas></div>
-    <div class="chart-legend">
-      <div class="legend-item"><span class="legend-line" style="background:#3fb950"></span>Fresh (&gt;5)</div>
-      <div class="legend-item"><span class="legend-line" style="background:#7d8590"></span>Neutral</div>
-      <div class="legend-item"><span class="legend-line" style="background:#d29922"></span>Tired</div>
-      <div class="legend-item"><span class="legend-line" style="background:#f85149"></span>Very fatigued (&lt;-30)</div>
-    </div>
-
-  </div>
 
   <div class="card" id="true-age-card">
     <div class="card-title">
@@ -933,8 +929,19 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div id="kom-scan-status" style="font-size:13px;color:#7d8590;padding:8px 0"></div>
       <div id="kom-scan-controls" style="margin-bottom:12px"></div>
       <div class="g3" id="kom-scan-totals" style="margin-bottom:12px"></div>
-      <div id="town-leaderboard" style="margin-bottom:16px"></div>
       <div id="full-kom-list"></div>
+    </div>
+  </div>
+
+  <!-- Towns get their own card so the Palmares page has a second substantial
+       widget instead of one tile on an otherwise empty screen. Populated by
+       renderFullKomList, which already computes the ranking. -->
+  <div class="card" id="collapse-towns" style="margin-top:1.5rem">
+    <div class="card-title collapse-head" onclick="toggleCollapse('towns')">
+      <div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>Top towns</div>
+    </div>
+    <div class="collapse-body">
+      <div id="town-leaderboard"></div>
     </div>
   </div>
 
@@ -3219,6 +3226,61 @@ function renderStreaks() {
       '</div>' +
       (weekly === bestWeekly ? '<div style="font-size:10px;color:#C9A227;margin-top:8px">🏆 Currently at your all-time best!</div>' : '<div style="font-size:10px;color:#7d8590;margin-top:8px">'+(bestWeekly-weekly)+' weeks from all-time best</div>') +
     '</div>';
+
+  renderStreakTotals(daily);
+}
+
+// What the current streak actually consists of, broken out by sport:
+// "22 runs, 120 mi / 26 rides, 1,050 mi" says far more about the streak
+// than its length alone. Counts only the activities inside the streak.
+function streakBreakdown(streakDays) {
+  if (!streakDays) return [];
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - (streakDays - 1));
+  const byKey = {};
+  allActivities.forEach(function(a) {
+    const d = new Date(a.start_date_local || a.start_date);
+    if (isNaN(d.getTime()) || d < cutoff) return;
+    const key = activitySportKey(a);
+    if (!sportEnabled(key)) return;
+    if (!byKey[key]) byKey[key] = { key: key, count: 0, meters: 0, seconds: 0 };
+    byKey[key].count++;
+    byKey[key].meters += a.distance || 0;
+    byKey[key].seconds += a.moving_time || 0;
+  });
+  return Object.keys(byKey).map(function(k) { return byKey[k]; })
+    .sort(function(a, b) { return b.meters - a.meters; });
+}
+
+function renderStreakTotals(daily) {
+  const el = document.getElementById('streak-totals');
+  if (!el) return;
+  const parts = streakBreakdown(daily);
+  if (!parts.length) {
+    el.innerHTML = '<div style="font-size:12px;color:#7d8590">No activities in the current streak yet.</div>';
+    return;
+  }
+  const noun = { road: 'ride', gravel: 'gravel ride', mtb: 'MTB ride', run: 'run',
+                 trailrun: 'trail run', walk: 'walk', hike: 'hike',
+                 virtualride: 'virtual ride', virtualrun: 'virtual run', other: 'activity' };
+  const totalMi = parts.reduce(function(s, p) { return s + p.meters; }, 0) / 1609.34;
+  const totalN = parts.reduce(function(s, p) { return s + p.count; }, 0);
+  el.innerHTML =
+    '<div style="font-size:12px;color:#7d8590;text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px">Current streak breakdown</div>' +
+    parts.map(function(p) {
+      const label = noun[p.key] || 'activity';
+      return '<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-top:1px solid #21262d">' +
+        '<span style="font-size:17px;font-weight:700;color:#e6edf3;min-width:34px">' + p.count + '</span>' +
+        '<span style="flex:1;font-size:13px;color:#e6edf3">' + escapeHTML(label + (p.count === 1 ? '' : 's')) + '</span>' +
+        '<span style="font-size:14px;font-weight:600;color:#C9A227">' + (p.meters / 1609.34).toFixed(1) + ' mi</span>' +
+      '</div>';
+    }).join('') +
+    '<div style="display:flex;align-items:baseline;gap:8px;padding:7px 0 0;border-top:1px solid #30363d;margin-top:2px">' +
+      '<span style="font-size:17px;font-weight:700;color:#e6edf3;min-width:34px">' + totalN + '</span>' +
+      '<span style="flex:1;font-size:13px;color:#7d8590">total over ' + daily + ' day' + (daily === 1 ? '' : 's') + '</span>' +
+      '<span style="font-size:14px;font-weight:700;color:#C9A227">' + totalMi.toFixed(1) + ' mi</span>' +
+    '</div>';
 }
 
 function renderDashboard() {
@@ -3328,7 +3390,18 @@ function renderTodayCards() {
           mph: Math.round(s.component),
           rank: s.rank != null ? s.rank : null,
           distanceMi: s.distanceMi != null ? +s.distanceMi.toFixed(2) : null
-        }
+        },
+        // Top three, so the glance tile can list real choices rather than
+        // a single pick you have to tap through to compare.
+        tailwindTop: top.slice(0, 3).map(function(x) {
+          return {
+            name: x.segment_name || 'Segment',
+            mph: Math.round(x.component),
+            rank: x.rank != null ? x.rank : null,
+            distanceMi: x.distanceMi != null ? +x.distanceMi.toFixed(2) : null,
+            id: x.segment_id
+          };
+        })
       });
       const label = s.component >= 0 ? ('Tailwind ' + Math.round(s.component) + ' mph') : ('Headwind ' + Math.abs(Math.round(s.component)) + ' mph');
       const color = s.component >= 10 ? '#3fb950' : s.component >= 0 ? '#d29922' : '#f85149';
@@ -4709,12 +4782,13 @@ function wWeeklyMiles(weeks) {
 // every tile in that section is full width - the Train page's cards are
 // charts and tables, which are unreadable squeezed into a half-width tile.
 const WIDGET_ORDER = {
-  dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card',
-              'today-opportunity-card', 'card-dashboard-events', 'collapse-streaks']
+  dashboard: ['last-activity-card', 'today-focus-card', 'collapse-streaks',
+              'today-wx-card', 'today-opportunity-card', 'card-dashboard-events']
 };
 const WIDGET_FULLWIDTH = {
-  dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card'],
-  performance: '*'
+  dashboard: ['last-activity-card', 'today-focus-card', 'today-wx-card', 'today-opportunity-card'],
+  performance: '*',
+  segments: '*'
 };
 
 const WIDGET_RENDERERS = {
@@ -4777,38 +4851,61 @@ const WIDGET_RENDERERS = {
         '</div>' +
       '</div>';
 
-    // Rest of the week: day, icon, high/low, wind - the same row the full
-    // forecast shows, compressed to fit without scrolling.
-    const days = Math.min(6, (d.time || []).length);
+    // The next few HOURS, not the rest of the week: the question this tile
+    // answers is "can I ride shortly?". The 7-day view lives in the card
+    // you get by tapping through.
+    const hourly = window._wxData.hourly;
     let strip = '';
-    for (let i = 1; i < days; i++) {
-      const dayName = new Date(d.time[i] + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
-      const w = msToMph(d.windspeed_10m_max[i]);
-      strip += '<div style="flex:1;min-width:0;text-align:center">' +
-        '<div class="w-stat-l">' + dayName + '</div>' +
-        '<div style="font-size:17px;line-height:1.3">' + wxIcon(d.weathercode[i]) + '</div>' +
-        '<div style="font-size:12px;color:#e6edf3">' + Math.round(d.temperature_2m_max[i]) + '°<span style="color:#7d8590">/' + Math.round(d.temperature_2m_min[i]) + '°</span></div>' +
-        '<div style="font-size:10px;color:' + (w > 20 ? '#f85149' : w > 12 ? '#d29922' : '#7d8590') + '">' + w + 'mph</div>' +
-      '</div>';
+    if (hourly && hourly.time) {
+      const now = new Date();
+      const upcoming = [];
+      for (let i = 0; i < hourly.time.length && upcoming.length < 6; i++) {
+        const t = new Date(hourly.time[i]);
+        if (isNaN(t.getTime()) || t < now) continue;
+        upcoming.push(i);
+      }
+      strip = upcoming.map(function(i) {
+        const t = new Date(hourly.time[i]);
+        const w = hourly.windspeed_10m ? msToMph(hourly.windspeed_10m[i]) : null;
+        const pop = hourly.precipitation_probability ? Math.round(hourly.precipitation_probability[i]) : null;
+        return '<div style="flex:1;min-width:0;text-align:center">' +
+          '<div class="w-stat-l">' + t.toLocaleTimeString('en-US', { hour: 'numeric' }).replace(' ', '') + '</div>' +
+          '<div style="font-size:16px;line-height:1.3">' + wxIcon(hourly.weathercode ? hourly.weathercode[i] : 0) + '</div>' +
+          '<div style="font-size:12px;color:#e6edf3">' + Math.round(hourly.temperature_2m[i]) + '°</div>' +
+          (w !== null ? '<div style="font-size:10px;color:' + (w > 20 ? '#f85149' : w > 12 ? '#d29922' : '#7d8590') + '">' + w + 'mph</div>' : '') +
+          (pop ? '<div style="font-size:10px;color:#58a6ff">' + pop + '%</div>' : '') +
+        '</div>';
+      }).join('');
     }
     return today + (strip ? '<div style="display:flex;gap:4px;margin-top:10px;padding-top:9px;border-top:1px solid #21262d">' + strip + '</div>' : '');
   },
 
   'today-opportunity-card': function() {
+    // Three picks, not one: choosing where to ride is a comparison, so the
+    // tile lists the options side by side rather than making you tap in.
+    // Check the list BEFORE the single pick - the single one is nulled when
+    // a recompute finds nothing, which would otherwise hide a good list.
     const t = _widgetSnapshot.tailwind;
+    const list = (_widgetSnapshot.tailwindTop && _widgetSnapshot.tailwindTop.length)
+      ? _widgetSnapshot.tailwindTop.slice(0, 3)
+      : (t && t.name ? [t] : []);
     // Say what's happening instead of falling through to a bare "View":
     // no tailwind pick is itself the answer, and the forecast may simply
     // not have landed yet.
-    if (!t || !t.name) {
+    if (!list.length) {
       return '<div class="w-sub" style="margin-top:auto">' +
         (window._wxData ? 'No standout tailwind segment nearby today.' : 'Waiting on today\'s forecast…') + '</div>';
     }
-    const c = t.mph >= 10 ? '#3fb950' : t.mph >= 0 ? '#d29922' : '#f85149';
-    return '<div class="w-head"><span class="w-big sm" style="color:' + c + '">' + (t.mph >= 0 ? '+' : '') + t.mph + '</span><span class="w-cap">mph ' + (t.mph >= 0 ? 'tailwind' : 'headwind') + '</span></div>' +
-      '<div class="w-line w-truncate"><span class="w-dot" style="background:' + c + '"></span>' + escapeHTML(t.name) + '</div>' +
-      '<div class="w-stats"><div><div class="w-stat-v">' + (t.rank ? '#' + t.rank : '—') + '</div><div class="w-stat-l">Your rank</div></div>' +
-        (t.distanceMi ? '<div><div class="w-stat-v">' + t.distanceMi.toFixed(1) + ' mi</div><div class="w-stat-l">Length</div></div>' : '') +
+    const rows = list.map(function(x) {
+      const c = x.mph >= 10 ? '#3fb950' : x.mph >= 0 ? '#d29922' : '#f85149';
+      return '<div style="display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid #21262d">' +
+        '<span style="font-size:17px;font-weight:700;color:' + c + ';min-width:52px">' + (x.mph >= 0 ? '+' : '') + x.mph + '<span style="font-size:10px;font-weight:400"> mph</span></span>' +
+        '<span class="w-truncate" style="flex:1;font-size:13px;color:#e6edf3">' + escapeHTML(x.name) + '</span>' +
+        (x.rank ? '<span class="badge ' + (x.rank === 1 ? 'b-gold' : 'b-blue') + '" style="flex-shrink:0">#' + x.rank + '</span>' : '') +
+        (x.distanceMi ? '<span class="w-stat-l" style="flex-shrink:0">' + x.distanceMi.toFixed(1) + ' mi</span>' : '') +
       '</div>';
+    }).join('');
+    return '<div class="w-sub" style="margin-bottom:2px">Best wind-assisted segments right now</div>' + rows;
   },
 
   'last-activity-card': function() {
@@ -4850,22 +4947,6 @@ const WIDGET_RENDERERS = {
   },
 
   // ---- Train page ----
-  'fitness-trend-card': function() {
-    if (!allActivities.length) return null;
-    const m = computeMetrics(allActivities);
-    const delta = m.ctl - m.prevCtl;
-    const weeks = wWeeklyMiles(6);
-    const peak = Math.max.apply(null, weeks.concat([1]));
-    const bars = weeks.map(function(mi, i) {
-      const h = Math.max(3, Math.round((mi / peak) * 30));
-      return '<div class="w-bar" style="height:' + h + 'px;background:' + (i === weeks.length - 1 ? '#C9A227' : '#30363d') + '" title="' + mi + ' mi"></div>';
-    }).join('');
-    return '<div class="w-head"><span class="w-big">' + m.ctl + '</span><span class="w-cap">fitness (CTL)</span>' +
-        '<span class="w-cap" style="color:' + (delta >= 0 ? '#3fb950' : '#f85149') + '">' + (delta >= 0 ? '+' : '') + delta + ' this week</span></div>' +
-      '<div class="w-sub">Fatigue ' + m.atl + ' &middot; Form ' + (m.tsb >= 0 ? '+' : '') + m.tsb + '</div>' +
-      '<div class="w-bars">' + bars + '</div><div class="w-stat-l" style="margin-top:3px">Weekly volume, last 6 weeks</div>';
-  },
-
   'true-age-card': function() {
     let vo2 = null, age = null;
     try { vo2 = getEffectiveVO2Max(); age = getEffectiveAge(); } catch (e) { return null; }
@@ -4924,6 +5005,48 @@ const WIDGET_RENDERERS = {
     return '<div class="w-head"><span class="w-big">' + (longest.distance / 1609.34).toFixed(1) + '</span><span class="w-cap">mi &middot; longest ride</span></div>' +
       '<div class="w-sub w-truncate">' + escapeHTML(longest.name || '') + '</div>' +
       (climb && climb.total_elevation_gain ? '<div class="w-stats"><div><div class="w-stat-v">' + Math.round(climb.total_elevation_gain * 3.281).toLocaleString() + ' ft</div><div class="w-stat-l">Biggest climb day</div></div></div>' : '');
+  },
+
+  // ---- Palmarès page ----
+  // renderFullKomList stashes its computed totals here so these tiles show
+  // the same numbers as the page itself rather than recomputing (and
+  // risking disagreeing with) the held/lost/passive logic.
+  'collapse-koms': function() {
+    const st = window._komStats;
+    if (!st) return null;
+    const label = { road: 'Road', gravel: 'Gravel', mtb: 'MTB', run: 'Run', trailrun: 'Trail' };
+    const sports = PALMARES_SPORTS.filter(function(k) {
+      return sportEnabled(k) && (st.koms[k] || st.top10s[k]);
+    });
+    const head = '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
+      '<div><div style="font-size:31px;font-weight:700;line-height:1;color:#C9A227">' + st.totalKoms + '</div><div class="w-stat-l">KOMs held</div></div>' +
+      '<div><div style="font-size:31px;font-weight:700;line-height:1;color:#58a6ff">' + st.totalTop10s + '</div><div class="w-stat-l">Top 10s</div></div>' +
+      '</div>';
+    if (!sports.length) return head;
+    const rows = sports.map(function(k) {
+      return '<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;border-top:1px solid #21262d">' +
+        '<span style="flex:1;font-size:13px;color:#e6edf3">' + label[k] + '</span>' +
+        '<span style="font-size:15px;font-weight:600;color:#C9A227;min-width:34px;text-align:right">' + (st.koms[k] || 0) + '</span>' +
+        '<span class="w-stat-l" style="min-width:30px">KOM</span>' +
+        '<span style="font-size:15px;font-weight:600;color:#58a6ff;min-width:34px;text-align:right">' + (st.top10s[k] || 0) + '</span>' +
+        '<span class="w-stat-l" style="min-width:44px">TOP 10</span>' +
+      '</div>';
+    }).join('');
+    return head + '<div style="margin-top:8px">' + rows + '</div>';
+  },
+
+  'collapse-towns': function() {
+    const towns = window._komTowns;
+    if (!towns || !towns.length) return null;
+    const rows = towns.slice(0, 5).map(function(t, i) {
+      return '<div style="display:flex;align-items:baseline;gap:9px;padding:5px 0;border-top:1px solid #21262d">' +
+        '<span style="font-size:12px;color:#57606a;min-width:16px">' + (i + 1) + '</span>' +
+        '<span class="w-truncate" style="flex:1;font-size:13px;color:#e6edf3">' + escapeHTML(t.name) + '</span>' +
+        '<span style="font-size:15px;font-weight:600;color:#C9A227">' + t.koms + '</span><span class="w-stat-l">KOM</span>' +
+        '<span style="font-size:15px;font-weight:600;color:#58a6ff">' + t.top10s + '</span><span class="w-stat-l">T10</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="w-sub" style="margin-bottom:2px">Where your records live</div>' + rows;
   },
 
   'card-dashboard-events': function() {
@@ -5087,6 +5210,11 @@ function openDetail(sectionName, cardId) {
   // this moment - re-render now that it has real dimensions.
   if (card.querySelector('#palmares-map')) {
     setTimeout(function(){ try { renderPalmaresMap(); } catch(e) {} }, 60);
+  }
+  // Same problem for Chart.js: a canvas in a display:none card measures 0,
+  // so the fitness/form charts have to be drawn after the card is shown.
+  if (card.querySelector('#fitness-chart')) {
+    setTimeout(function(){ try { renderFitnessChart(allActivities); } catch(e) { console.error('fitness chart:', e); } }, 60);
   }
 }
 
@@ -7886,6 +8014,10 @@ async function renderFullKomList() {
         return { key, town: bestDisplay, koms: t.koms, top10s: t.top10s, total: t.koms + t.top10s };
       })
       .sort((a, b) => b.total - a.total);
+    // Feed the Top towns glance tile from the same ranking.
+    window._komTowns = townsRanked.slice(0, 5).map(function(t) {
+      return { name: t.town, koms: t.koms, top10s: t.top10s };
+    });
     if (townsRanked.length) {
       const top10 = townsRanked.slice(0, 10);
       const maxTotal = top10[0].total;
@@ -7920,6 +8052,29 @@ async function renderFullKomList() {
 
   const koms = stillHeldKoms.filter(inSport);
   const top10s = allTop10s.filter(inSport);
+
+  // Publish the same figures the page is about to render so the glance
+  // tiles can show them without recomputing the held/lost/passive logic.
+  // Per-sport counts ignore the sport dropdown (the tile lists every sport)
+  // but still respect Settings > Sports via palmaresSportAllowed.
+  (function() {
+    const byKom = {}, byTop = {};
+    stillHeldKoms.forEach(function(k) {
+      if (!palmaresSportAllowed(k.activity_type)) return;
+      const s = activitySportKey(k.activity_type);
+      byKom[s] = (byKom[s] || 0) + 1;
+    });
+    allTop10s.forEach(function(k) {
+      if (!palmaresSportAllowed(k.activity_type)) return;
+      const s = activitySportKey(k.activity_type);
+      byTop[s] = (byTop[s] || 0) + 1;
+    });
+    window._komStats = {
+      koms: byKom, top10s: byTop,
+      totalKoms: Object.keys(byKom).reduce(function(n, k) { return n + byKom[k]; }, 0),
+      totalTop10s: Object.keys(byTop).reduce(function(n, k) { return n + byTop[k]; }, 0)
+    };
+  })();
 
   if (totalsEl) {
     // One KOM/Top-10 chip pair per Palmarès sport that's enabled in

@@ -62,7 +62,7 @@ struct ContentView: View {
                     Text("Palmarès")
                         .font(.custom("Georgia-Bold", size: 20))
                         .foregroundColor(palmaresGold)
-                    Text("The work behind your records")
+                    Text("Your training. Your records.")
                         .font(.system(size: 12))
                         .foregroundColor(.gray)
                 }
