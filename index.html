@@ -180,6 +180,11 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   .section.has-widgets.detail-mode .section-header { display: none; }
   .section.has-widgets .detail-open { display: block !important; }
   .section.has-widgets .g2.detail-open, .section.has-widgets .g3.detail-open, .section.has-widgets .g4.detail-open { grid-template-columns: 1fr; }
+  /* Cards paired inside a .g2/.g3/.g4 (power curve + aerobic efficiency,
+     the zone tables) are not direct children of the section, so the rule
+     above never hid them - opening either one showed both stuck together.
+     Hide the siblings of whichever card was actually drilled into. */
+  .section.has-widgets.detail-mode .detail-open > .card:not(.detail-open) { display: none !important; }
 }
 @media(min-width:901px) {
   .widget-grid, .detail-bar { display: none !important; }
@@ -544,6 +549,17 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div id="today-opportunity-body" style="font-size:13px;color:#7d8590">Loading...</div>
   </div>
 
+  <!-- Only appears when a group ride is happening today; loadClubEvents
+       unhides it. The full list lives on Scout - Today should say "there's
+       a ride today" and nothing more. -->
+  <div class="card" id="today-event-card" style="border:1px solid #C9A227;display:none">
+    <div class="card-title">
+      <div class="card-title-left"><svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Group ride today</div>
+      <a href="#" class="ext-link" onclick="goToCard('map','card-dashboard-events');return false" style="color:#C9A227">All events ›</a>
+    </div>
+    <div id="today-event-body"></div>
+  </div>
+
   <div class="card" id="collapse-streaks">
     <div class="card-title collapse-head" onclick="toggleCollapse('streaks')"><div class="card-title-left"><span class="collapse-caret">▼</span><svg class="card-icon" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>Streaks</div></div>
     <div class="collapse-body">
@@ -552,16 +568,6 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     </div>
   </div>
 
-  <div class="card" id="card-dashboard-events" style="margin-top:1.5rem">
-    <div class="card-title">
-      <div class="card-title-left">
-        <svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Upcoming group events
-      </div>
-      <span id="events-count" style="font-size:12px;color:#7d8590"></span>
-    </div>
-    <div id="events-list"><div style="font-size:12px;color:#7d8590;padding:8px 0">Loading club events...</div></div>
-  </div>
 
 </div>
 
@@ -1044,6 +1050,17 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <div class="map-legend-item"><span class="map-swatch" style="background:#e0691a"></span>Planned route</div>
     </div>
     <div class="map-status" id="map-status">Open this after your Strava data loads. Finish the Segments scan/enrichment for the most complete KOM and Top 10 map.</div>
+  </div>
+
+  <div class="card" id="card-dashboard-events" style="margin-bottom:1.5rem">
+    <div class="card-title">
+      <div class="card-title-left">
+        <svg class="card-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Upcoming group events
+      </div>
+      <span id="events-count" style="font-size:12px;color:#7d8590"></span>
+    </div>
+    <div id="events-list"><div style="font-size:12px;color:#7d8590;padding:8px 0">Loading club events...</div></div>
   </div>
 
   <div class="card" id="collapse-road-reports">
@@ -4720,16 +4737,25 @@ async function renderDistanceScanUI() {
 const WIDGET_SECTIONS = ['dashboard', 'performance', 'segments', 'map', 'activities'];
 let detailOpen = {}; // sectionName -> cardId currently drilled into
 
+// A card hidden by an inline display:none isn't ready to be seen (the
+// last-activity card before data loads, the group-ride alert on a day with
+// no ride), so it must not generate a tile - an empty tile that opens onto
+// an empty card is worse than no tile.
+function cardIsShown(el) { return el.style.display !== 'none'; }
+
 function sectionCards(sec) {
   const out = [];
   Array.from(sec.children).forEach(function(el) {
-    if (el.classList.contains('card') && el.querySelector('.card-title')) { out.push(el); return; }
+    if (el.classList.contains('card') && el.querySelector('.card-title')) {
+      if (cardIsShown(el)) out.push(el);
+      return;
+    }
     // Cards paired inside a .g2/.g3 grid (power curve + aerobic efficiency,
     // the zone tables) are still top-level content to the reader, so they
     // get their own widget rather than being skipped.
     if (/\bg[234]\b/.test(el.className)) {
       Array.from(el.children).forEach(function(c) {
-        if (c.classList && c.classList.contains('card') && c.querySelector('.card-title')) out.push(c);
+        if (c.classList && c.classList.contains('card') && c.querySelector('.card-title') && cardIsShown(c)) out.push(c);
       });
     }
   });
@@ -4775,8 +4801,9 @@ function wWeeklyMiles(weeks) {
 // every tile in that section is full width - the Train page's cards are
 // charts and tables, which are unreadable squeezed into a half-width tile.
 const WIDGET_ORDER = {
-  dashboard: ['last-activity-card', 'today-focus-card', 'collapse-streaks',
-              'today-wx-card', 'today-opportunity-card', 'card-dashboard-events']
+  dashboard: ['today-event-card', 'last-activity-card', 'today-focus-card',
+              'collapse-streaks', 'today-wx-card', 'today-opportunity-card'],
+  map: ['card-dashboard-events']
 };
 const WIDGET_FULLWIDTH = {
   dashboard: ['last-activity-card', 'today-focus-card', 'collapse-streaks',
@@ -4935,9 +4962,37 @@ const WIDGET_RENDERERS = {
   'collapse-streaks': function() {
     if (!allActivities.length) return null;
     const daily = calcDailyStreak(), weekly = calcWeeklyStreak();
-    return '<div class="w-head"><span class="w-big">' + daily + '</span><span class="w-cap">day streak</span></div>' +
-      '<div class="w-sub">' + (daily >= 14 ? '🔥 On a tear' : daily >= 7 ? '⚡ Building' : daily > 0 ? 'Keep it going' : 'Rest day') + '</div>' +
-      '<div class="w-stats"><div><div class="w-stat-v">' + weekly + '</div><div class="w-stat-l">Week streak</div></div></div>';
+    // What the streak is made of, on the tile itself - "3 days" alone says
+    // nothing about whether that was three commutes or three centuries.
+    const parts = streakBreakdown(daily);
+    const short = { road: 'ride', gravel: 'gravel', mtb: 'MTB', run: 'run', trailrun: 'trail',
+                    walk: 'walk', hike: 'hike', virtualride: 'virtual', virtualrun: 'virtual', other: 'other' };
+    const plural = { road: 'rides', gravel: 'gravel', mtb: 'MTB', run: 'runs', trailrun: 'trail',
+                     walk: 'walks', hike: 'hikes', virtualride: 'virtual', virtualrun: 'virtual', other: 'other' };
+    const totalMi = parts.reduce(function(s, p) { return s + p.meters; }, 0) / 1609.34;
+    const breakdown = parts.slice(0, 3).map(function(p) {
+      const noun = p.count === 1 ? short[p.key] : plural[p.key];
+      return '<div><div class="w-stat-v">' + p.count + ' <span style="font-size:11px;font-weight:400;color:#7d8590">' + noun + '</span></div>' +
+        '<div class="w-stat-l">' + (p.meters / 1609.34).toFixed(0) + ' mi</div></div>';
+    }).join('');
+    return '<div class="w-head"><span class="w-big">' + daily + '</span><span class="w-cap">day streak</span>' +
+        (totalMi > 0 ? '<span class="w-cap" style="color:#C9A227">' + totalMi.toFixed(0) + ' mi total</span>' : '') + '</div>' +
+      '<div class="w-sub">' + (daily >= 14 ? '🔥 On a tear' : daily >= 7 ? '⚡ Building' : daily > 0 ? 'Keep it going' : 'Rest day') +
+        ' &middot; ' + weekly + '-week streak</div>' +
+      (breakdown ? '<div class="w-stats">' + breakdown + '</div>' : '');
+  },
+
+  'today-event-card': function() {
+    const rows = document.querySelectorAll('#today-event-body .row').length;
+    if (!rows) return null;
+    const first = document.querySelector('#today-event-body .row');
+    const name = first.querySelector('.row-name');
+    const meta = first.querySelector('.row-meta');
+    const when = first.querySelector('.row-right');
+    return '<div class="w-head"><span class="w-big sm" style="color:#C9A227">' + escapeHTML((when && when.textContent.trim()) || 'today') + '</span></div>' +
+      '<div class="w-sub w-truncate w-strong">' + escapeHTML((name && name.textContent.trim()) || 'Club ride') + '</div>' +
+      '<div class="w-stats"><div><div class="w-stat-v">' + escapeHTML((meta && meta.textContent.trim()) || '') + '</div>' +
+      '<div class="w-stat-l">' + (rows > 1 ? rows + ' rides today' : 'Starts') + '</div></div></div>';
   },
 
   // ---- Train page ----
@@ -5058,31 +5113,11 @@ const WIDGET_RENDERERS = {
 
 // Streak + weekly-volume widgets are generated from live state rather than a
 // specific card, so they are described here and injected into the grid.
+// Tiles with no card of their own. Empty for now: "This week" duplicated
+// the volume already shown in Training status, and Streaks earned a real
+// card. Kept as a hook because a genuinely card-less tile may return.
 function widgetExtras(sectionName) {
-  if (sectionName !== 'dashboard' || !allActivities.length) return [];
-  const out = [];
-  const daily = calcDailyStreak(), weekly = calcWeeklyStreak();
-  const weeks = wWeeklyMiles(2);
-  const thisWk = weeks[1], lastWk = weeks[0];
-  const diff = lastWk > 0 ? Math.round(((thisWk - lastWk) / lastWk) * 100) : null;
-  const now = new Date();
-  const monday = new Date(now); { const d = now.getDay(); monday.setDate(now.getDate() - (d === 0 ? 6 : d - 1)); }
-  monday.setHours(0,0,0,0);
-  const acts = allActivities.filter(a => new Date(a.start_date) >= monday).length;
-
-  out.push({
-    id: 'card-dashboard-week',
-    name: 'This week',
-    svg: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-    body: '<div class="w-head"><span class="w-big">' + thisWk + '</span><span class="w-cap">mi</span></div>' +
-      '<div class="w-sub">' + acts + ' activit' + (acts === 1 ? 'y' : 'ies') +
-        (diff !== null ? ' &middot; <span style="color:' + (diff >= 0 ? '#3fb950' : '#d29922') + '">' + (diff >= 0 ? '+' : '') + diff + '% vs last week</span>' : '') + '</div>',
-    target: 'today-focus-card'
-  });
-
-  // Streaks are no longer synthesised here - they have a real card on the
-  // dashboard now, so the tile drills into it like any other.
-  return out;
+  return [];
 }
 
 // Pull a glance value out of whatever the card already rendered, so the
@@ -6562,6 +6597,28 @@ async function loadClubEvents() {
     upcoming.sort((a,b) => a.nextDate - b.nextDate);
 
     document.getElementById('events-count').textContent = upcoming.length + ' upcoming';
+
+    // Today only cares about a ride happening TODAY - the full list lives
+    // on Scout. The card stays hidden (and so generates no glance tile)
+    // on any day without one.
+    (function() {
+      const card = document.getElementById('today-event-card');
+      const body = document.getElementById('today-event-body');
+      if (!card || !body) return;
+      const todayStr = new Date().toDateString();
+      const todays = upcoming.filter(function(e) { return e.nextDate.toDateString() === todayStr; });
+      if (!todays.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      body.innerHTML = todays.slice(0, 3).map(function(e) {
+        const time = e.nextDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        const mins = Math.round((e.nextDate - new Date()) / 60000);
+        const when = mins <= 0 ? 'under way' : mins < 60 ? 'in ' + mins + ' min' : 'in ' + Math.round(mins / 60) + 'h';
+        return '<div class="row"><div><div class="row-name">' +
+            '<a href="' + (e.external ? escapeHTML(e.url) : stravaClubHref(e)) + '" target="_blank" rel="noopener noreferrer" title="View on Strava" aria-label="View on Strava" style="color:#e6edf3;text-decoration:none">' + escapeHTML(e.title || 'Club ride') + '</a></div>' +
+            '<div class="row-meta">' + time + ' &middot; ' + escapeHTML(e.club_name || 'Club') + '</div></div>' +
+          '<div class="row-right" style="color:#C9A227">' + when + '</div></div>';
+      }).join('');
+    })();
 
     updateWidgetData({
       nextEvent: upcoming.length ? {
