@@ -132,10 +132,38 @@ listened for and ride reminders were silently dead.
 
 ## Outstanding
 
-- **WeatherKit** — Key ID and `.p8` exist. Still needs a Team ID, a Service
-  ID, and all four values in Supabase Edge Function secrets. The site stays
-  on Open-Meteo until then, and no frontend change is needed at any point.
-  See [docs/weatherkit-setup.md](docs/weatherkit-setup.md).
 - **`fetch_url`** — not yet deployed to the Supabase function, so external
   ride calendars (SBRA) render as links rather than inline events. See
-  [docs/edge-fetch-url.md](docs/edge-fetch-url.md).
+  [docs/edge-fetch-url.md](docs/edge-fetch-url.md). Confirmed still open on
+  2026-07-22: the deployed function answers `{"error":"Unknown action:
+  fetch_url"}`.
+
+## Done, but recently enough to be worth stating
+
+**WeatherKit is live.** Finished on the laptop 2026-07-22, after the desktop
+last looked. All four secrets (`WEATHERKIT_KEY_ID`, `WEATHERKIT_TEAM_ID`,
+`WEATHERKIT_SERVICE_ID`, `WEATHERKIT_PRIVATE_KEY`) are set, and `get_weather`
+returns `_source: "weatherkit"` with real Apple data. The site is no longer on
+Open-Meteo, which now serves only as the fallback path and for ZIP geocoding.
+
+The `sub` claim is the **App ID** `com.kamildobrowolski.palmares`, not a
+separate Service ID — a Service ID was tried and was not what Apple wanted.
+The capability also takes roughly 15 minutes to propagate after being enabled,
+which makes a correct configuration look broken; `NOT_ENABLED` right after a
+change means wait, not rewrite. Verify before changing anything here:
+
+```sh
+curl -s -X POST "$SUPABASE_URL/functions/v1/sync-strava" \
+  -H "Authorization: Bearer $ANON" -H "Content-Type: application/json" \
+  -d '{"action":"get_weather","lat":40.86,"lon":-73.20}' | grep -o '_source[^,]*'
+```
+
+## The branding sweep must include `privacy.html`
+
+The hand-drawn Strava mark has now crept in three times. The third was in
+`privacy.html`, which survived the `index.html` cleanup because nobody grepped
+it. Check every HTML file in the repo, not just the app page:
+
+```sh
+grep -rn "M15.387 17.944" --include=*.html .   # must return nothing
+```

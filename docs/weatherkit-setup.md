@@ -1,9 +1,17 @@
 # Finishing the WeatherKit cutover
 
+> **Completed 2026-07-22 — this document is now history, not a to-do.**
+> All four secrets are set and `get_weather` returns `_source: "weatherkit"`
+> with live Apple data. Two corrections to what follows, learned by doing it:
+> the JWT `sub` is the **App ID** `com.kamildobrowolski.palmares` (a separate
+> Service ID was tried and rejected), and the capability takes ~15 minutes to
+> propagate, so a `NOT_ENABLED` response immediately after enabling it means
+> wait rather than reconfigure. Kept for reference and for rotating the key.
+
 The frontend is already done: `loadWeather()` in `index.html` asks the Edge
 Function (`get_weather`) first and falls back to Open-Meteo, and the deployed
-function currently answers `{ "available": false }` — the exact "secrets not
-configured yet" state the code anticipates. Apple attribution is already
+function answered `{ "available": false }` before the secrets were set — the
+exact "secrets not configured yet" state the code anticipates. Apple attribution is already
 rendered when the source is WeatherKit. **No frontend change is needed at
 any point in this document.**
 
