@@ -116,6 +116,52 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
   .seg-btn { flex: 1; padding: 8px 10px; }
 }
 
+/* GLANCE WIDGETS — Garmin-style. Each page opens as a grid of compact
+   tiles instead of a wall of stacked cards; tapping one drills into that
+   card full-width with a back bar. Kills the endless scroll: you choose
+   what to look at instead of scrolling past everything to reach it. */
+.widget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
+.widget { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 1rem 1.05rem; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 6px; min-height: 104px; transition: border-color .15s, transform .08s; }
+.widget:hover { border-color: #C9A227; }
+.widget:active { transform: scale(0.985); }
+.widget-top { display: flex; align-items: center; gap: 8px; }
+.widget-top svg { width: 15px; height: 15px; stroke: #C9A227; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.widget-name { font-size: 12px; color: #7d8590; font-weight: 500; line-height: 1.25; }
+.widget-value { font-size: 22px; font-weight: 600; color: #e6edf3; line-height: 1.1; margin-top: auto; }
+.widget-value.empty { font-size: 13px; color: #57606a; font-weight: 400; }
+.widget-chev { margin-left: auto; color: #57606a; font-size: 15px; line-height: 1; }
+
+/* Detail mode: one card, full width, with a back bar. */
+.detail-bar { display: none; align-items: center; gap: 10px; margin-bottom: 1rem; }
+.detail-back { background: #161b22; border: 1px solid #30363d; border-radius: 8px; color: #e6edf3; cursor: pointer; font-size: 13px; padding: 7px 13px; display: flex; align-items: center; gap: 6px; }
+.detail-back:hover { border-color: #C9A227; }
+.detail-title { font-size: 15px; font-weight: 600; color: #e6edf3; }
+
+/* Once a page has widgets, its content is hidden by default - the grid IS
+   the page. Cards only appear when drilled into. Without this the widgets
+   just add another block above the same endless scroll. */
+.section.has-widgets > *:not(.section-header):not(.widget-grid):not(.detail-bar) { display: none; }
+.section.has-widgets.detail-mode .widget-grid { display: none; }
+.section.has-widgets.detail-mode .detail-bar { display: flex; }
+.section.has-widgets.detail-mode .section-header { display: none; }
+.section.has-widgets .detail-open { display: block !important; }
+.section.has-widgets .g2.detail-open, .section.has-widgets .g3.detail-open, .section.has-widgets .g4.detail-open { grid-template-columns: 1fr; }
+
+/* Swipeable strips: metric rows become one-handed horizontal carousels on
+   phones rather than a 2x2 block that pushes everything else down. */
+@media(max-width:720px){
+  .widget-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .widget { min-height: 92px; padding: 0.8rem 0.85rem; }
+  .widget-value { font-size: 19px; }
+  .g4.swipe-strip, .g3.swipe-strip {
+    display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch; gap: 10px; padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .g4.swipe-strip::-webkit-scrollbar, .g3.swipe-strip::-webkit-scrollbar { display: none; }
+  .g4.swipe-strip > *, .g3.swipe-strip > * { flex: 0 0 62%; scroll-snap-align: start; }
+}
+
 /* COLLAPSIBLE CARDS - click the title to expand/collapse. Collapse state is
    persisted per-key in localStorage so the page comes back the way it was
    left, which is the whole point of collapsing a long page. */
@@ -1628,6 +1674,16 @@ function showSection(name) {
   // (activities). Cross-section data triggers fire on every room that needs
   // them: weather feeds Today's cards, the Map forecast, AND the Segments
   // tailwind list, so any of those entry points warms it.
+  // Always land on the glance grid, never mid-drilldown from a prior visit.
+  if (WIDGET_SECTIONS.indexOf(name) >= 0) {
+    closeDetail(name);
+    markSwipeStrips();
+    // Build now, then again after this section's async renders land, so the
+    // tiles show real numbers instead of placeholders.
+    buildWidgets(name);
+    setTimeout(function(){ buildWidgets(name); }, 700);
+    setTimeout(function(){ buildWidgets(name); }, 2500);
+  }
   if ((name === 'dashboard' || name === 'map' || name === 'segments') && !weatherLoaded) { weatherLoaded = true; loadWeather(); }
   if (name === 'map' && !roadReportsLoaded) { roadReportsLoaded = true; loadRoadReports(); }
   if (name === 'map') { setTimeout(function(){ try { initPalmaresMap(); renderPalmaresMap(); renderTailwindSegments(currentWxDayIdx); applyCollapseState(); } catch(e) { console.error('renderMap:', e); } }, 80); }
@@ -4517,6 +4573,126 @@ async function renderDistanceScanUI() {
 // {activity_id, activity_name, start_date|date, ...} entries plus a
 // formatter for the value column, so the same widget works for both
 // elapsed-time and watts data.
+// ==================== GLANCE WIDGETS / DRILL-DOWN ====================
+// Each page renders as a grid of compact widgets; tapping one opens that
+// card on its own with a back bar, Garmin-style. Widgets are generated
+// from the cards already in the DOM (icon + title lifted straight from
+// .card-title), so a new card becomes a new widget with no extra wiring.
+
+const WIDGET_SECTIONS = ['dashboard', 'performance', 'segments', 'map', 'activities'];
+let detailOpen = {}; // sectionName -> cardId currently drilled into
+
+function sectionCards(sec) {
+  const out = [];
+  Array.from(sec.children).forEach(function(el) {
+    if (el.classList.contains('card') && el.querySelector('.card-title')) { out.push(el); return; }
+    // Cards paired inside a .g2/.g3 grid (power curve + aerobic efficiency,
+    // the zone tables) are still top-level content to the reader, so they
+    // get their own widget rather than being skipped.
+    if (/\bg[234]\b/.test(el.className)) {
+      Array.from(el.children).forEach(function(c) {
+        if (c.classList && c.classList.contains('card') && c.querySelector('.card-title')) out.push(c);
+      });
+    }
+  });
+  return out;
+}
+
+// Pull a glance value out of whatever the card already rendered, so the
+// tile shows a number rather than just a label. Falls back through the
+// shapes actually used in this app before giving up.
+function widgetSummaryFor(card) {
+  const explicit = card.getAttribute('data-widget-value');
+  if (explicit) return explicit;
+  const metric = card.querySelector('.metric-val, .widget-value-src');
+  if (metric && metric.textContent.trim() && metric.textContent.trim() !== '--') {
+    const sub = card.querySelector('.metric-label');
+    return metric.textContent.trim() + (sub ? ' <span style="font-size:11px;color:#7d8590">' + sub.textContent.trim().toLowerCase() + '</span>' : '');
+  }
+  const big = card.querySelector('[style*="font-size:52px"], [style*="font-size:36px"]');
+  if (big && big.textContent.trim()) return big.textContent.trim();
+  const rows = card.querySelectorAll('.row').length;
+  if (rows) return rows + ' <span style="font-size:11px;color:#7d8590">' + (rows === 1 ? 'entry' : 'entries') + '</span>';
+  return '';
+}
+
+function buildWidgets(sectionName) {
+  const sec = document.getElementById('section-' + sectionName);
+  if (!sec) return;
+  const cards = sectionCards(sec);
+  if (!cards.length) return;
+
+  let grid = sec.querySelector(':scope > .widget-grid');
+  if (!grid) {
+    grid = document.createElement('div');
+    grid.className = 'widget-grid';
+    const bar = document.createElement('div');
+    bar.className = 'detail-bar';
+    bar.innerHTML = '<button class="detail-back" onclick="closeDetail(\'' + sectionName + '\')">&larr; Back</button>' +
+                    '<span class="detail-title"></span>';
+    const header = sec.querySelector(':scope > .section-header');
+    if (header && header.nextSibling) sec.insertBefore(bar, header.nextSibling);
+    else sec.insertBefore(bar, sec.firstChild);
+    sec.insertBefore(grid, bar.nextSibling);
+  }
+  sec.classList.add('has-widgets');
+
+  grid.innerHTML = cards.map(function(card, i) {
+    if (!card.id) card.id = 'card-' + sectionName + '-' + i;
+    const titleEl = card.querySelector('.card-title-left');
+    const svg = titleEl ? (titleEl.querySelector('svg') || {}).outerHTML || '' : '';
+    const name = titleEl ? titleEl.textContent.replace(/[▼▶]/g, '').trim() : card.id;
+    const value = widgetSummaryFor(card);
+    return '<button class="widget" onclick="openDetail(\'' + sectionName + '\',\'' + card.id + '\')">' +
+      '<div class="widget-top">' + svg + '<span class="widget-name">' + escapeHTML(name) + '</span>' +
+      '<span class="widget-chev">&rsaquo;</span></div>' +
+      '<div class="widget-value' + (value ? '' : ' empty') + '">' + (value || 'View') + '</div>' +
+    '</button>';
+  }).join('');
+}
+
+function openDetail(sectionName, cardId) {
+  const sec = document.getElementById('section-' + sectionName);
+  const card = document.getElementById(cardId);
+  if (!sec || !card) return;
+  sec.querySelectorAll('.detail-open').forEach(function(c) { c.classList.remove('detail-open'); });
+  // Mark the card and every wrapper between it and the section, otherwise a
+  // card nested in a .g2 stays hidden along with its parent.
+  let node = card;
+  while (node && node !== sec) { node.classList.add('detail-open'); node = node.parentElement; }
+  sec.classList.add('detail-mode');
+  const titleEl = card.querySelector('.card-title-left');
+  const bar = sec.querySelector(':scope > .detail-bar .detail-title');
+  if (bar) bar.textContent = titleEl ? titleEl.textContent.replace(/[▼▶]/g, '').trim() : '';
+  detailOpen[sectionName] = cardId;
+  // A collapsed card would open to just its own title bar, which reads as
+  // broken when it's the only thing on screen.
+  card.classList.remove('collapsed');
+  window.scrollTo(0, 0);
+  // Maps size themselves from their container, which was display:none until
+  // this moment - re-render now that it has real dimensions.
+  if (card.querySelector('#palmares-map')) {
+    setTimeout(function(){ try { renderPalmaresMap(); } catch(e) {} }, 60);
+  }
+}
+
+function closeDetail(sectionName) {
+  const sec = document.getElementById('section-' + sectionName);
+  if (!sec) return;
+  sec.classList.remove('detail-mode');
+  sec.querySelectorAll('.detail-open').forEach(function(c) { c.classList.remove('detail-open'); });
+  delete detailOpen[sectionName];
+  buildWidgets(sectionName); // refresh glance values with whatever rendered
+  window.scrollTo(0, 0);
+}
+
+// Metric strips become swipeable carousels on phones.
+function markSwipeStrips() {
+  document.querySelectorAll('.g4, .g3').forEach(function(el) {
+    if (el.children.length >= 3) el.classList.add('swipe-strip');
+  });
+}
+
 // ==================== COLLAPSIBLE CARDS ====================
 // Long pages (Performance especially) stack many tall cards, so each one can
 // be collapsed to just its title. State is keyed by name in localStorage so
