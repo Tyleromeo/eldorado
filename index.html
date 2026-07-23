@@ -813,15 +813,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
     <div class="collapse-body">
     <div id="cal-grid"></div>
     <div id="cal-day-detail" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #21262d"></div>
-    <div class="chart-legend" style="margin-top:10px;flex-wrap:wrap;gap:8px">
-      <div class="legend-item"><span class="legend-dot" style="background:#FC4C02"></span>Ride</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Run</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>Walk/Hike</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#39d0f5"></span>Swim</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#c0e0ff"></span>Ski</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#bc8cff"></span>Other</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#21262d;border:1px solid #444"></span>Rest</div>
-    </div>
+    <div class="chart-legend" id="cal-legend" style="margin-top:10px;flex-wrap:wrap;gap:8px"></div>
     </div>
   </div>
 
@@ -5787,6 +5779,29 @@ function renderCalendar() {
   </div>`;
 
   var calGrid = document.getElementById('cal-grid'); if (calGrid) calGrid.innerHTML = html;
+
+  // Legend shows only the sports the athlete actually does - colours are keyed
+  // off activityTypeColor so they always match the dots above. Rest always
+  // applies (the dark tiles are days with no activity).
+  var calLegend = document.getElementById('cal-legend');
+  if (calLegend) {
+    var cats = [
+      { color: '#FC4C02', label: 'Ride' },
+      { color: '#58a6ff', label: 'Run' },
+      { color: '#3fb950', label: 'Walk/Hike' },
+      { color: '#39d0f5', label: 'Swim' },
+      { color: '#c0e0ff', label: 'Ski' },
+      { color: '#f0883e', label: 'Strength' },
+      { color: '#bc8cff', label: 'Other' }
+    ];
+    var present = {};
+    allActivities.forEach(function (a) { present[activityTypeColor(a.type)] = true; });
+    var lh = cats.filter(function (c) { return present[c.color]; })
+      .map(function (c) { return '<div class="legend-item"><span class="legend-dot" style="background:' + c.color + '"></span>' + c.label + '</div>'; })
+      .join('');
+    lh += '<div class="legend-item"><span class="legend-dot" style="background:#21262d;border:1px solid #444"></span>Rest</div>';
+    calLegend.innerHTML = lh;
+  }
 }
 
 function showCalDay(dateStr) {
@@ -7634,7 +7649,7 @@ function renderActivities() {
   const totalsEl = document.getElementById('activity-totals');
   if (totalsEl) {
     totalsEl.innerHTML = `
-      <div class="metric"><div class="metric-label">Biggest ride</div><div class="metric-val">${biggestRide ? '<a href="'+stravaActivityHref(biggestRide.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none" title="View on Strava" aria-label="View on Strava">'+(biggestRide.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${biggestRide ? new Date(biggestRide.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
+      <div class="metric"><div class="metric-label">Longest ride</div><div class="metric-val">${biggestRide ? '<a href="'+stravaActivityHref(biggestRide.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none" title="View on Strava" aria-label="View on Strava">'+(biggestRide.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${biggestRide ? new Date(biggestRide.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
       <div class="metric"><div class="metric-label">Biggest climb</div><div class="metric-val">${stats && stats.biggest_climb_elevation_gain ? Math.round(stats.biggest_climb_elevation_gain*3.281).toLocaleString() + ' ft' : '--'}</div><div class="metric-sub">single ride</div></div>
       <div class="metric"><div class="metric-label">Longest run</div><div class="metric-val">${longestRun ? '<a href="'+stravaActivityHref(longestRun.id)+'" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none" title="View on Strava" aria-label="View on Strava">'+(longestRun.distance/1609.34).toFixed(1)+' mi</a>' : '--'}</div><div class="metric-sub">${longestRun ? new Date(longestRun.start_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'all time'}</div></div>
       <div class="metric"><div class="metric-label">All-time ride miles</div><div class="metric-val">${rideAllTimeMi}</div><div class="metric-sub">${rideTotal?rideTotal.count.toLocaleString()+' total rides':''}</div></div>
@@ -8922,24 +8937,28 @@ async function routeLeg(legIndex) {
     // Fetch elevations for these points via Open-Meteo elevation endpoint.
     // We downsample first - a full urban route can return hundreds of points
     // and we don't need every one for a reasonable ascent estimate.
-    const sampledPoints = downsampleForElevation(points, 100);
-    let ascentM = 0;
-    try {
-      const elevations = await fetchElevations(sampledPoints);
-      for (let i = 1; i < elevations.length; i++) {
-        const diff = elevations[i] - elevations[i - 1];
-        if (diff > 0) ascentM += diff;
-      }
-    } catch (e) {
-      console.warn('Elevation lookup failed for leg:', e);
-    }
-
-    routeLegs[legIndex] = { points, distanceM, ascentM, mode: legMode };
+    // Draw the leg immediately - the line should appear the instant OSRM
+    // returns. Elevation (open-elevation, often several seconds and sometimes
+    // down) was previously awaited here, which made every click feel frozen.
+    routeLegs[legIndex] = { points, distanceM, ascentM: 0, mode: legMode };
     renderRoutePolyline();
     updateRouteStats();
     setRouteStatus(legMode === 'manual'
       ? 'Manual trail leg added. You can switch modes anytime; the next click uses the selected mode.'
-      : 'Leg added with ' + routeModeLabel(legMode) + '. You can switch modes anytime, add more waypoints, or download the GPX when done.');
+      : 'Leg added with ' + routeModeLabel(legMode) + '. Elevation is loading; you can keep adding waypoints or download the GPX when done.');
+
+    // Fetch ascent in the background and fill it in when it lands. Guard
+    // against the leg being cleared/re-routed meanwhile by checking identity.
+    const sampledPoints = downsampleForElevation(points, 100);
+    fetchElevations(sampledPoints).then(function (elevations) {
+      let ascentM = 0;
+      for (let i = 1; i < elevations.length; i++) {
+        const diff = elevations[i] - elevations[i - 1];
+        if (diff > 0) ascentM += diff;
+      }
+      const leg = routeLegs[legIndex];
+      if (leg && leg.points === points) { leg.ascentM = ascentM; updateRouteStats(); }
+    }).catch(function (e) { console.warn('Elevation lookup failed for leg:', e); });
   } catch (err) {
     setRouteStatus('Routing failed: ' + err.message + '. Try a closer waypoint, or switch to Trail/Manual to draw the trail yourself.');
     // Remove the waypoint that failed to route so state stays consistent
