@@ -432,6 +432,32 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .route-seg-top10 { background:#1a2d3a; color:#58a6ff; border:1px solid #388bfd; }
 @media(max-width:720px){ #palmares-map{height:68vh;min-height:420px;} .map-toolbar{gap:6px}.map-toggle{font-size:11px;padding:6px 9px;} }
 
+/* The three view modes are mutually exclusive. The plain .active outline
+   didn't read as "this one, and only this one" - the selected mode is now
+   filled so the off modes are unmistakably off. */
+#map-mode-bar .map-toggle.active { background:#C9A227; color:#0d1117; border-color:#C9A227; font-weight:600; }
+#map-mode-bar #map-mode-route.active { background:#e0691a; border-color:#e0691a; color:#0d1117; }
+
+/* Full-screen map, Strava-style: the map escapes its deck card to fill the
+   viewport (used automatically for route building, and via the expand
+   button in any mode). The route panel pins to the bottom, the exit
+   control floats top-left. */
+body.map-fs { overflow: hidden; }
+/* Truly fullscreen: hide the in-page nav (the native app already hides it;
+   this covers web/PWA where it's a fixed sidebar/bar at z-index 9999). */
+body.map-fs .nav { display: none !important; }
+body.map-fs .container { margin-left: 0 !important; }
+/* position/inset need !important: Leaflet writes position:relative inline on
+   the map container, and an inline style beats a plain stylesheet rule. */
+body.map-fs #palmares-map { position: fixed !important; inset: 0 !important; width: 100vw; height: 100vh; height: 100dvh; min-height: 0; margin: 0; border: none; border-radius: 0; z-index: 10000; }
+#map-fs-exit { display: none; position: fixed; top: calc(env(safe-area-inset-top) + 12px); left: 12px; z-index: 10002; }
+body.map-fs #map-fs-exit { display: flex; }
+/* The expand button is pointless once already full screen. */
+body.map-fs #map-fs-enter { display: none; }
+body.map-fs #route-builder-panel { position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 10002; margin: 0; border-radius: 14px 14px 0 0; max-height: 48vh; overflow-y: auto; padding-bottom: calc(env(safe-area-inset-bottom) + 14px); box-shadow: 0 -8px 24px rgba(0,0,0,.5); }
+.map-fs-btn { background:#161b22; border:1px solid #30363d; color:#e6edf3; border-radius:999px; padding:9px 15px; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.map-fs-btn.exit { background:#e0691a; color:#0d1117; border-color:#e0691a; font-weight:600; }
+
 /* ROUTES / GPX */
 .route-drop { border:2px dashed #30363d; border-radius:12px; padding:2.5rem; text-align:center; cursor:pointer; transition:border-color 0.2s; }
 .route-drop:hover { border-color:#C9A227; }
@@ -1035,6 +1061,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
       <button class="map-toggle active" id="map-mode-segments" onclick="setMapMode('segments')">Segments</button>
       <button class="map-toggle" id="map-mode-heat" onclick="setMapMode('heat')">Heatmap</button>
       <button class="map-toggle" id="map-mode-route" onclick="setMapMode('route')" style="border-color:#e0691a">Route builder</button>
+      <button class="map-toggle" id="map-fs-enter" onclick="setMapFullscreen(true)" style="margin-left:auto" title="Full screen">⛶ Full screen</button>
     </div>
     <div class="map-toolbar map-subbar" id="map-group-type">
       <span class="map-group-label">Type</span>
@@ -1095,6 +1122,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
         <div id="saved-routes-list"><div style="font-size:11px;color:#7d8590">Saved routes will appear here.</div></div>
       </div>
     </div>
+    <button type="button" id="map-fs-exit" class="map-fs-btn exit" onclick="setMapFullscreen(false)">✕ Exit full screen</button>
     <div class="map-shell"><div id="palmares-map"></div></div>
     <div class="map-legend">
       <div class="map-legend-item"><span class="map-swatch" style="background:#3fb950"></span>Tailwind 10+ mph</div>
@@ -2380,6 +2408,32 @@ window.syncNowFromNative = function() {
     notifyNative({ type: 'refreshDone' });
   });
 };
+
+// Swipe-to-go-back inside a drilled-in detail view (Today/Train/Palmares): a
+// rightward, mostly-horizontal swipe closes it, matching the iOS back
+// gesture, so the top-left Back button isn't the only way out. The deck
+// pages (Log/Scout) scroll horizontally themselves and never enter
+// detail-mode, so this never fights their swipe.
+(function() {
+  let sx = null, sy = null;
+  document.addEventListener('touchstart', function(e) {
+    if (!document.querySelector('.section.detail-mode')) { sx = null; return; }
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    if (sx == null) return;
+    const startX = sx, startY = sy; sx = null; sy = null;
+    const open = document.querySelector('.section.detail-mode');
+    if (!open) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX, dy = t.clientY - startY;
+    // Rightward, mostly horizontal, begun in the left ~60% so it reads as
+    // "back" rather than an accidental content scroll near the right edge.
+    if (dx > 80 && Math.abs(dy) < 55 && startX < window.innerWidth * 0.6) {
+      closeDetail(open.id.replace('section-', ''));
+    }
+  }, { passive: true });
+})();
 
 // MAIN LOAD
 async function loadAll(token) {
@@ -8753,7 +8807,20 @@ function setMapMode(mode) {
   if (palmaresMap) palmaresMap.getContainer().style.cursor = (mode === 'route') ? 'crosshair' : '';
   syncMapToolbar();
   if (mode === 'route') { updateRouteStats(); renderSavedRoutes(); }
+  // Route building wants the whole screen, Strava-style - drop straight into
+  // full screen so there's room to place points and watch the line grow.
+  if (mode === 'route') setMapFullscreen(true);
   renderPalmaresMap();
+}
+
+// Expand the map to fill the viewport (and back). Leaflet caches its
+// container size, so it has to be told to remeasure after the resize or the
+// tiles render into the old, smaller box.
+function setMapFullscreen(on) {
+  document.body.classList.toggle('map-fs', !!on);
+  setTimeout(function() {
+    try { if (palmaresMap) { palmaresMap.invalidateSize(); renderPalmaresMap(); } } catch (e) {}
+  }, 60);
 }
 function setMapAchievement(a) { palmaresMapState.achievement = a; syncMapToolbar(); renderPalmaresMap(); }
 function setMapSport(s) { palmaresMapState.sport = s; syncMapToolbar(); renderPalmaresMap(); }
