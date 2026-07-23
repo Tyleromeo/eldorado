@@ -8804,7 +8804,13 @@ function setMapMode(mode) {
   routeBuilderActive = (mode === 'route');
   const panel = document.getElementById('route-builder-panel');
   if (panel) panel.style.display = (mode === 'route') ? 'block' : 'none';
-  if (palmaresMap) palmaresMap.getContainer().style.cursor = (mode === 'route') ? 'crosshair' : '';
+  // Set the cursor on the map element directly: palmaresMap is a mapkit.Map,
+  // which has no Leaflet-style getContainer() - calling it threw a
+  // TypeError that aborted the rest of setMapMode (toolbar sync, fullscreen,
+  // and the renderPalmaresMap repaint), which is why switching modes left
+  // the old layer up and the segments button appeared dead.
+  const mapEl = document.getElementById('palmares-map');
+  if (mapEl) mapEl.style.cursor = (mode === 'route') ? 'crosshair' : '';
   syncMapToolbar();
   if (mode === 'route') { updateRouteStats(); renderSavedRoutes(); }
   // Route building wants the whole screen, Strava-style - drop straight into
@@ -8818,9 +8824,9 @@ function setMapMode(mode) {
 // tiles render into the old, smaller box.
 function setMapFullscreen(on) {
   document.body.classList.toggle('map-fs', !!on);
-  setTimeout(function() {
-    try { if (palmaresMap) { palmaresMap.invalidateSize(); renderPalmaresMap(); } } catch (e) {}
-  }, 60);
+  // MapKit tracks its container size on its own; a repaint after the resize
+  // settles is enough (and it has no Leaflet-style invalidateSize()).
+  setTimeout(function() { try { if (palmaresMap) renderPalmaresMap(); } catch (e) {} }, 80);
 }
 function setMapAchievement(a) { palmaresMapState.achievement = a; syncMapToolbar(); renderPalmaresMap(); }
 function setMapSport(s) { palmaresMapState.sport = s; syncMapToolbar(); renderPalmaresMap(); }
@@ -9126,6 +9132,31 @@ function updateRouteStats() {
   if (elevEl) elevEl.textContent = Math.round(totalAscent * 3.281).toLocaleString() + ' ft';
   if (wpEl) wpEl.textContent = String(routeWaypoints.length);
   if (segEl) segEl.textContent = String(routeSegmentsOnRoute.length || 0);
+  updateRouteHint();
+}
+
+// A floating hint on the map itself so it's obvious the map is now tappable -
+// shown only in route mode before the first point is placed, since "why
+// isn't anything happening when I tap" is exactly the confusion here.
+function updateRouteHint() {
+  const host = document.getElementById('palmares-map');
+  if (!host) return;
+  let hint = document.getElementById('route-hint');
+  const show = routeBuilderActive && routeWaypoints.length === 0;
+  if (!show) { if (hint) hint.remove(); return; }
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'route-hint';
+    // Sits below the top edge so it clears the full-screen Exit button
+    // (top-left) rather than colliding with it.
+    hint.style.cssText = 'position:absolute;top:calc(env(safe-area-inset-top) + 60px);left:50%;transform:translateX(-50%);z-index:15;' +
+      'background:rgba(224,105,26,.95);color:#0d1117;font-size:13px;font-weight:600;padding:8px 15px;' +
+      'border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.45);pointer-events:none;white-space:nowrap;' +
+      'max-width:92%;text-align:center';
+    host.style.position = 'relative';
+    host.appendChild(hint);
+  }
+  hint.textContent = '📍 Tap the map to set your start point';
 }
 
 function setRouteStatus(msg) {
@@ -9855,35 +9886,32 @@ async function renderPalmaresMap() {
   if (!palmaresMap || !palmaresMapLayers.achievements) return;
   hideMapPopup();
 
-  // Wait for weather data before drawing so wind colors are actually
-  // applied on the first render. The prior fire-and-forget approach set
-  // weatherLoaded=true synchronously, meaning if the user opened the Map
-  // before the weather fetch completed there was no re-render trigger and
-  // wind colors silently stayed off until the user manually toggled
-  // something.
-  if (!window._wxData) {
-    try {
-      weatherLoaded = true;
-      await loadWeather();
-    } catch (e) {
-      // If weather fails, we still want to draw the achievements - just
-      // without wind colors. Log for debugging but don't block the map.
-      console.warn('Weather unavailable for map wind coloring:', e);
-    }
-  }
-
   syncMapToolbar();
-  palmaresMapLayers.achievements.clearLayers();
 
-  const result = await getMapAchievementEntries();
+  // Clear the old overlays and (re)draw the heatmap up front - before any
+  // slow fetch - so switching mode or sport repaints immediately instead of
+  // waiting on the achievement scan. renderHeatLayer draws only in heat mode
+  // and clears itself otherwise, so leaving heat mode removes the heatmap at
+  // once rather than after the scan finally resolves.
+  palmaresMapLayers.achievements.clearLayers();
+  const heatStats = renderHeatLayer();
+  updateRouteHint(); // show in route mode with no points, remove otherwise
+
+  let result = null;
   let hiddenByDistance = 0;
   let entries = [];
   const bounds = [];
   let drawn = 0, missingGeometry = 0;
 
-  // Segments mode draws the KOM/Top-10 lines. Heatmap and Route modes are
-  // their own separate views and leave the achievements layer empty.
+  // Only the segments view needs the achievement scan and the weather fetch
+  // (for wind colouring). Heat and route skip both, so they switch instantly
+  // - that scan was what made sport toggles lag and stalled mode switches.
   if (palmaresMapState.mode === 'segments') {
+    if (!window._wxData) {
+      try { weatherLoaded = true; await loadWeather(); }
+      catch (e) { console.warn('Weather unavailable for map wind coloring:', e); }
+    }
+    result = await getMapAchievementEntries();
     entries = result.entries.filter(isMapEntryVisible).filter(function(entry) {
       const detail = result.enrichedCache[entry.segment_id];
       const points = pointsForMapEntry(entry, detail);
@@ -9930,7 +9958,6 @@ async function renderPalmaresMap() {
     });
   }
 
-  const heatStats = renderHeatLayer();
   // Only auto-fit on the very first render. Otherwise toggling a layer off
   // (e.g. hiding bike) would collapse the visible bounds and zoom out to
   // wherever the remaining data is - including outlier trips halfway across
@@ -9982,7 +10009,7 @@ async function renderPalmaresMap() {
       ? ('Road heatmap of ' + heatStats.activityCount + ' ' + (palmaresMapState.sport === 'run' ? 'runs' : 'rides') + ': darker roads mean more times on them; light traces are places you went once.')
       : 'No ' + (palmaresMapState.sport === 'run' ? 'runs' : 'rides') + ' with map data yet for the heatmap.';
   }
-  else if (!result.entries.length) status = 'No KOM or Top 10 scan data found yet. Go to Segments and run the full scan to populate this map.';
+  else if (!result || !result.entries.length) status = 'No KOM or Top 10 scan data found yet. Go to Segments and run the full scan to populate this map.';
   else if (drawn === 0) status = 'No ' + (palmaresMapState.achievement === 'kom' ? 'KOM/CR' : 'Top 10') + ' ' + sportWord + ' segments with geometry for this filter. Enrich segments in the Segments tab, or try the other type/sport.';
   else {
     let mode;
