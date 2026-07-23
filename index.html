@@ -9589,20 +9589,40 @@ function getMapWind(day) {
   return { direction: data.daily.winddirection_10m_dominant[idx], speed: msToMph(data.daily.windspeed_10m_max[idx]) };
 }
 
+// Mean wind effect along the ACTUAL path, weighted by leg length - not a
+// single start->end bearing. A segment that turns into the wind halfway is
+// now scored honestly. Positive meanComponent = net tailwind mph, negative =
+// net headwind; pctAssisted is how much of the distance has wind at your
+// back. This is Kominator's "Mean Wind Effect", done per leg.
+function windAdvantageForPath(points, windDir, windSpeedMph) {
+  if (!points || points.length < 2 || windDir == null || windSpeedMph == null) return null;
+  const windTo = (windDir + 180) % 360; // forecast reports where wind comes FROM
+  let weighted = 0, totalLen = 0, assistedLen = 0;
+  for (let i = 1; i < points.length; i++) {
+    const legLen = milesBetweenLatLng(points[i - 1], points[i]);
+    if (!(legLen > 0)) continue;
+    const bearing = bearingBetween(points[i - 1], points[i]);
+    const comp = windSpeedMph * Math.cos(angleDiff(bearing, windTo) * Math.PI / 180);
+    weighted += comp * legLen;
+    totalLen += legLen;
+    if (comp >= 0) assistedLen += legLen;
+  }
+  if (!(totalLen > 0)) return null;
+  return { meanComponent: weighted / totalLen, pctAssisted: Math.round(assistedLen / totalLen * 100), lengthMi: totalLen };
+}
+
 function windForLine(points) {
   const wind = getMapWind(palmaresMapState.wind === 'tomorrow' ? 'tomorrow' : 'today');
   if (!wind || !points || points.length < 2) return null;
-  const start = points[0], end = points[points.length - 1];
-  const segmentBearing = bearingBetween(start, end);
-  const windTo = (wind.direction + 180) % 360; // weather direction is where wind comes FROM; this is where it blows TO
-  const diff = angleDiff(segmentBearing, windTo);
-  const component = wind.speed * Math.cos(diff * Math.PI / 180); // positive tailwind, negative headwind
-  let color = '#58a6ff', label = 'Crosswind / unknown';
+  const adv = windAdvantageForPath(points, wind.direction, wind.speed);
+  if (!adv) return null;
+  const component = adv.meanComponent;
+  let color = '#58a6ff', label;
   if (component >= 10) { color = '#3fb950'; label = 'Tailwind ' + Math.round(component) + ' mph'; }
   else if (component >= 0) { color = '#d29922'; label = 'Tailwind ' + Math.round(component) + ' mph'; }
   else if (component > -10) { color = '#f0883e'; label = 'Headwind ' + Math.abs(Math.round(component)) + ' mph'; }
   else { color = '#f85149'; label = 'Headwind ' + Math.abs(Math.round(component)) + ' mph'; }
-  return { color, label, component: Math.round(component), windSpeed: wind.speed, windDirection: wind.direction, segmentBearing: Math.round(segmentBearing) };
+  return { color, label, component: Math.round(component), pctAssisted: adv.pctAssisted, windSpeed: wind.speed, windDirection: wind.direction };
 }
 
 function mapColorForEntry(entry, points) {
@@ -9612,6 +9632,46 @@ function mapColorForEntry(entry, points) {
   }
   if (entry.kind === 'kom') return '#C9A227';
   return '#58a6ff';
+}
+
+// A compass overlay in the corner of the map (Kominator-style): shows which
+// way the wind is blowing and how hard, for whichever forecast time is
+// selected, so the segment colours have an at-a-glance key. Hidden in route
+// mode and when wind is off.
+function renderWindRose() {
+  const host = document.getElementById('palmares-map');
+  if (!host) return;
+  let rose = document.getElementById('wind-rose');
+  const on = palmaresMapState.mode !== 'route' && palmaresMapState.wind !== 'off';
+  const wind = on ? getMapWind(palmaresMapState.wind === 'tomorrow' ? 'tomorrow' : 'today') : null;
+  if (!wind) { if (rose) rose.remove(); return; }
+  if (!rose) {
+    rose = document.createElement('div');
+    rose.id = 'wind-rose';
+    // Top-right corner: clears the locate/exit controls (top-left), the zoom
+    // buttons (bottom-right), and - importantly - Apple's required Maps/Legal
+    // attribution (bottom-left), which must stay visible under MapKit terms.
+    rose.style.cssText = 'position:absolute;right:10px;top:10px;z-index:14;background:rgba(22,27,34,.92);' +
+      'border:1px solid #30363d;border-radius:12px;padding:7px 11px 7px 8px;display:flex;align-items:center;gap:9px;' +
+      'box-shadow:0 4px 14px rgba(0,0,0,.4);pointer-events:none';
+    host.style.position = 'relative';
+    host.appendChild(rose);
+  }
+  const blowTo = (wind.direction + 180) % 360; // arrow points where wind blows to
+  const dayLabel = palmaresMapState.wind === 'tomorrow' ? 'Tomorrow' : 'Today';
+  rose.innerHTML =
+    '<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">' +
+      '<circle cx="22" cy="22" r="19" fill="#0d1117" stroke="#30363d"/>' +
+      '<text x="22" y="10" fill="#7d8590" font-size="7" text-anchor="middle">N</text>' +
+      '<g transform="rotate(' + blowTo + ' 22 22)">' +
+        '<path d="M22 7 L27 25 L22 21 L17 25 Z" fill="#3fb950"/>' +
+      '</g>' +
+    '</svg>' +
+    '<div style="line-height:1.2">' +
+      '<div style="font-size:14px;font-weight:700;color:#e6edf3">' + windDirName(wind.direction) + ' ' + Math.round(wind.speed) +
+        '<span style="font-size:10px;color:#7d8590;font-weight:400"> mph</span></div>' +
+      '<div style="font-size:10px;color:#7d8590">' + dayLabel + ' wind</div>' +
+    '</div>';
 }
 
 async function getMapAchievementEntries() {
@@ -9688,7 +9748,7 @@ function popupForMapEntry(entry, detail, wind) {
   const date = entry.date ? new Date(entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
   const dist = detail && detail.distance ? (detail.distance/1609.34).toFixed(2) + ' mi' : '';
   const elev = detail && detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft gain' : '';
-  const windLine = wind ? '<div><strong>' + (palmaresMapState.wind === 'tomorrow' ? 'Tomorrow' : 'Today') + ':</strong> ' + wind.label + ' <span style="color:#57606a">(' + Math.round(wind.windSpeed) + ' mph wind)</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
+  const windLine = wind ? '<div><strong>Mean wind effect:</strong> ' + wind.label + ' <span style="color:#57606a">(' + wind.pctAssisted + '% wind-assisted &middot; ' + Math.round(wind.windSpeed) + ' mph ' + (palmaresMapState.wind === 'tomorrow' ? 'tomorrow' : 'today') + ')</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
   return '<div class="map-popup">' +
     '<div class="map-popup-title">' + escapeHTML(entry.segment_name || 'Segment') + '</div>' +
     '<div><strong>' + rank + '</strong> &middot; ' + sport + '</div>' +
@@ -9905,6 +9965,7 @@ async function renderPalmaresMap() {
   palmaresMapLayers.achievements.clearLayers();
   const heatStats = renderHeatLayer();
   updateRouteHint(); // show in route mode with no points, remove otherwise
+  renderWindRose();  // compass overlay, or removes itself when wind is off
 
   let result = null;
   let hiddenByDistance = 0;
