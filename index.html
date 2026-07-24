@@ -420,7 +420,7 @@ body.native-app .container { margin-left: 0; padding-top: 1.5rem; }
 .map-legend-item { display:flex; align-items:center; gap:5px; }
 .map-swatch { width:12px; height:12px; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.25); }
 .map-status { font-size:12px; color:#7d8590; margin:10px 0 0; line-height:1.45; }
-.map-popup { color:#0d1117; font-size:12px; line-height:1.45; min-width:220px; }
+.map-popup { color:#e6edf3; font-size:12px; line-height:1.45; min-width:220px; }
 .map-popup-title { font-weight:700; margin-bottom:4px; }
 .map-popup a { color:#FC4C02; text-decoration:none; }
 .saved-route-card { background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:10px 12px; margin-bottom:8px; }
@@ -9770,7 +9770,7 @@ function popupForMapEntry(entry, detail, wind) {
   const date = entry.date ? new Date(entry.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
   const dist = detail && detail.distance ? (detail.distance/1609.34).toFixed(2) + ' mi' : '';
   const elev = detail && detail.elevation_gain ? Math.round(detail.elevation_gain*3.281) + ' ft gain' : '';
-  const windLine = wind ? '<div><strong>Mean wind effect:</strong> ' + wind.label + ' <span style="color:#57606a">(' + wind.pctAssisted + '% wind-assisted &middot; ' + Math.round(wind.windSpeed) + ' mph ' + (palmaresMapState.wind === 'tomorrow' ? 'tomorrow' : 'today') + ')</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
+  const windLine = wind ? '<div><strong>Mean wind effect:</strong> ' + wind.label + ' <span style="color:#8b949e">(' + wind.pctAssisted + '% wind-assisted &middot; ' + Math.round(wind.windSpeed) + ' mph ' + (palmaresMapState.wind === 'tomorrow' ? 'tomorrow' : 'today') + ')</span></div>' : '<div><strong>Wind:</strong> needs segment direction + forecast</div>';
   return '<div class="map-popup">' +
     '<div class="map-popup-title">' + escapeHTML(entry.segment_name || 'Segment') + '</div>' +
     '<div><strong>' + rank + '</strong> &middot; ' + sport + '</div>' +
