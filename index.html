@@ -450,7 +450,12 @@ body.map-fs .container { margin-left: 0 !important; }
 /* position/inset need !important: Leaflet writes position:relative inline on
    the map container, and an inline style beats a plain stylesheet rule. */
 body.map-fs #palmares-map { position: fixed !important; inset: 0 !important; width: 100vw; height: 100vh; height: 100dvh; min-height: 0; margin: 0; border: none; border-radius: 0; z-index: 10000; }
-#map-fs-exit { display: none; position: fixed; top: calc(env(safe-area-inset-top) + 12px); left: 12px; z-index: 10002; }
+/* Bottom-center, not top-left: the native app's top bar renders over the top
+   of the web view and ate taps on the old top-left button. Bottom-center also
+   clears the corners where Apple's required Maps attribution sits. z-index
+   sits above the map but below the route panel, so in route mode the panel's
+   own Done button is used and this doesn't overlap it. */
+#map-fs-exit { display: none; position: fixed; bottom: calc(env(safe-area-inset-bottom) + 18px); left: 50%; transform: translateX(-50%); z-index: 10001; }
 body.map-fs #map-fs-exit { display: flex; }
 /* The expand button is pointless once already full screen. */
 body.map-fs #map-fs-enter { display: none; }
@@ -1867,6 +1872,12 @@ let charts = {};
 
 // NAV
 function showSection(name) {
+  // Always leave map full-screen on any navigation - including re-tapping the
+  // Scout tab, which becomes a reliable escape hatch. The full-screen map is a
+  // fixed, inset:0 overlay, so if it survived a section change it would cover
+  // the new page with no way out. Entering the map never auto-fullscreens
+  // (only the Route builder does, on its own tap), so clearing here is safe.
+  document.body.classList.remove('map-fs');
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   const sec = document.getElementById('section-' + name);
   if (sec) sec.classList.add('active');
